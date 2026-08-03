@@ -1,0 +1,35 @@
+version: '3.9'
+services:
+# --- BASE DE DONNÉES (Stockage du texte) ---
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: transcribo
+      POSTGRES_USER: transcribo
+      POSTGRES_PASSWORD: transcribo123 # à changer en production pour la sécurité !
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data 
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # --- STOCKAGE DES FICHIERS ---
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin # à changer en production pour la sécurité !
+    ports:
+      - "9000:9000" # Port pour l'API
+      - "9001:9001" # Port pour l'interface web
+    volumes:
+      - minio_data:/data
+
+volumes:
+  pgdata:
+  minio_data:
