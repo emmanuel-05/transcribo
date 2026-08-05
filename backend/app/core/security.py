@@ -1,44 +1,44 @@
-# app/core/security.py
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import bcrypt  # Remplacement de passlib par bcrypt natif
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from app.core.config import get_settings
 
 settings = get_settings()
 
-# Contexte de hashage bcrypt
-# "deprecated='auto'" signifie que passlib utilisera
-# automatiquement un algorithme plus fort quand bcrypt sera obsolète
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 
 def hash_password(password: str) -> str:
     """
-    Transforme "mon_mdp" en hash irréversible.
-    Même nous, on ne peut pas retrouver le mot de passe.
+    Transforme un mot de passe en texte brut en hash bcrypt irréversible.
     """
-    return pwd_context.hash(password)
+    # 1. Convertit la chaîne de caractères (str) en octets (bytes)
+    pwd_bytes = password.encode('utf-8')
+    
+    # 2. Génère un sel unique (salt)
+    salt = bcrypt.gensalt()
+    
+    # 3. Calcule le hash et le retransforme en chaîne de caractères (str) pour la base de données
+    return bcrypt.hashpw(pwd_bytes, salt).decode('utf-8')
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
-    Vérifie si le mot de passe correspond au hash.
+    Vérifie si le mot de passe en clair correspond au hash enregistré.
     """
-    return pwd_context.verify(plain_password, hashed_password)
+    try:
+        # Conversion des deux chaînes en octets pour la comparaison de sécurité
+        pwd_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        
+        # bcrypt.checkpw extrait automatiquement le sel du hash pour faire la vérification
+        return bcrypt.checkpw(pwd_bytes, hashed_bytes)
+    except Exception:
+        return False
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     """
     Crée un JWT signé contenant les informations utilisateur.
-    
-    Exemple d'appel :
-        token = create_access_token({"sub": user.email, "user_id": str(user.id)})
-    
-    Le token résultant ressemble à :
-        eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9
-        .eyJzdWIiOiJ1c2VyQGV4YW1wbGUuY29tIiwidXNlcl9pZCI6IjEyMyIsImV4cCI6MTcxOTAwMDAwMH0
-        .abc123signature
     """
     to_encode = data.copy()
     

@@ -13,4 +13,4 @@ class Transcript(Base):
     audio_file_id = Column(UUID(as_uuid=True), ForeignKey("audio_files.id"), nullable=False)
 
     # Relation inverse vers AudioFile
-    audio_file = relationship("AudioFile", back_populates="transcript")
+    audio_file = relationship("AudioFile", back_populates="transcripts")
