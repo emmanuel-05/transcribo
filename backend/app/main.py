@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.infrastructure.db.models import *
-from app.api.v1.endpoints import auth
+from app.api.v1.endpoints import auth, projects, audios
 
 app = FastAPI(title="Transcribo API", version="0.1.0")
 
@@ -15,6 +15,9 @@ app.add_middleware(
 
 # Inclusion des routeurs
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")
+app.include_router(audios.router, prefix="/api/v1")
+
 
 @app.get("/")
 def read_root():
