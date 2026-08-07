@@ -12,6 +12,9 @@ Content-Type: application/json
 }
 
 ###
+
+# ─── INSCRIPTION 2
+# @name register2
 POST {{baseUrl}}/api/v1/auth/register
 Content-Type: application/json
 
@@ -51,7 +54,7 @@ Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── CRÉER UN PROJET (Récupère dynamiquement son ID)
+# ─── CRÉER UN PROJET (Génère l'ID utilisé ci-dessous)
 # @name createProject
 POST {{baseUrl}}/api/v1/projects/
 Content-Type: application/json
@@ -64,9 +67,9 @@ Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── VOIR UN PROJET (Utilise l'ID généré par createProject juste au-dessus)
+# ─── VOIR UN PROJET
 # @name getProject
-GET {{baseUrl}}/api/v1/projects/{{.response.body.id}}
+GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
 Authorization: Bearer {{login.response.body.access_token}}
 
 ###
@@ -81,13 +84,6 @@ Authorization: Bearer {{login.response.body.access_token}}
   "name": "Projet modifié",
   "description": "Nouvelle description"
 }
-
-###
-
-# ─── SUPPRIMER UN PROJET
-# @name deleteProject
-DELETE {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
-Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
@@ -109,5 +105,13 @@ Content-Type: audio/wav
 ###
 
 # ─── LISTER LES AUDIOS 
+# @name listAudios
 GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── SUPPRIMER UN PROJET (À exécuter en dernier !)
+# @name deleteProject
+DELETE {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
 Authorization: Bearer {{login.response.body.access_token}}
