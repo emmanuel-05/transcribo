@@ -1,10 +1,15 @@
 # app/api/v1/endpoints/audios.py
+
+# import des modules externes
 import uuid
+import io
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from pathlib import Path
 
+#import des modules internes
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.infrastructure.db.models.project import Project
@@ -13,6 +18,8 @@ from app.infrastructure.db.models.user import User
 from app.infrastructure.storage.s3 import upload_file_to_s3
 from app.api.v1.endpoints.auth import get_current_user
 from app.api.v1.schemas.audio import AudioFileResponse, AudioListResponse
+from app.infrastructure.storage.s3 import generate_presigned_url, s3_client
+
 
 settings = get_settings()
 
@@ -20,7 +27,7 @@ router = APIRouter(prefix="/projects", tags=["Audios"])
 
 # Formats acceptés
 ALLOWED_EXTENSIONS = {"wav", "mp3", "dss", "ds2", "flac", "ogg", "m4a", "aac"}
-MAX_FILE_SIZE = 500 * 1024 * 1024  # 500 Mo
+MAX_FILE_SIZE = 70 * 1024 * 1024  # 70 Mo
 
 
 @router.get("/{project_id}/audios", response_model=AudioListResponse)
@@ -120,4 +127,93 @@ async def upload_audio(
     await db.flush()
     await db.refresh(audio_file)
 
+
+
     return audio_file
+
+
+@router.get("/{project_id}/audios/{audio_id}/download")
+async def download_audio(
+    project_id: uuid.UUID,
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Télécharge un fichier audio (streaming)."""
+    # Vérifie le projet
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    # Récupère le fichier audio
+    result = await db.execute(
+        select(AudioFile).where(
+            AudioFile.id == audio_id,
+            AudioFile.project_id == project_id,
+        )
+    )
+    audio = result.scalar_one_or_none()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+
+    # Récupère depuis S3
+    try:
+        file_obj = s3_client.get_object(
+            Bucket=settings.S3_BUCKET_RAW_AUDIO,
+            Key=audio.storage_path_raw,
+        )
+        file_data = file_obj["Body"].read()
+        
+        return StreamingResponse(
+            io.BytesIO(file_data),
+            media_type="audio/wav",
+            headers={
+                "Content-Disposition": f'inline; filename="{audio.original_filename}"'
+            },
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Erreur lors du téléchargement : {str(e)}")
+
+
+@router.get("/{project_id}/audios/{audio_id}/url")
+async def get_audio_url(
+    project_id: uuid.UUID,
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Génère une URL présignée pour écouter le fichier audio."""
+    # Vérifie le projet
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    # Récupère le fichier
+    result = await db.execute(
+        select(AudioFile).where(
+            AudioFile.id == audio_id,
+            AudioFile.project_id == project_id,
+        )
+    )
+    audio = result.scalar_one_or_none()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+
+    # Génère URL présignée (valide 1 heure)
+    url = generate_presigned_url(
+        bucket=settings.S3_BUCKET_RAW_AUDIO,
+        key=audio.storage_path_raw,
+        expires_in=3600,
+    )
+    
+    return {"url": url, "filename": audio.original_filename}
