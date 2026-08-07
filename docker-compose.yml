@@ -8,7 +8,7 @@ services:
       POSTGRES_USER: transcribo
       POSTGRES_PASSWORD: transcribo123 # à changer en production pour la sécurité !
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data 
 

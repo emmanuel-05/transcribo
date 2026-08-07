@@ -1,0 +1,113 @@
+@baseUrl = http://127.0.0.1:8000
+
+# ─── INSCRIPTION 
+# @name register
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "secret123",
+  "full_name": "Jean Test"
+}
+
+###
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example2.com",
+  "password": "secret1232",
+  "full_name": "Jean2 Test2"
+}
+
+###
+
+# ─── CONNEXION 
+# @name login
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "secret123"
+}
+
+###
+
+# ─── PROFIL 
+# @name me
+GET {{baseUrl}}/api/v1/auth/me
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── PROJETS ───────────────────────────────────────────────────
+
+# ─── LISTER LES PROJETS 
+# @name listProjects
+GET {{baseUrl}}/api/v1/projects/
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── CRÉER UN PROJET (Récupère dynamiquement son ID)
+# @name createProject
+POST {{baseUrl}}/api/v1/projects/
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.access_token}}
+
+{
+  "name": "Projet Test",
+  "description": "Description du projet test"
+}
+
+###
+
+# ─── VOIR UN PROJET (Utilise l'ID généré par createProject juste au-dessus)
+# @name getProject
+GET {{baseUrl}}/api/v1/projects/{{.response.body.id}}
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── MODIFIER UN PROJET 
+# @name updateProject
+PATCH {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
+Content-Type: application/json
+Authorization: Bearer {{login.response.body.access_token}}
+
+{
+  "name": "Projet modifié",
+  "description": "Nouvelle description"
+}
+
+###
+
+# ─── SUPPRIMER UN PROJET
+# @name deleteProject
+DELETE {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── AUDIO ─────────────────────────────────────────────────────
+
+# ─── UPLOAD AUDIO 
+# @name uploadAudio
+POST {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios
+Authorization: Bearer {{login.response.body.access_token}}
+Content-Type: multipart/form-data; boundary=----boundary
+
+------boundary
+Content-Disposition: form-data; name="file"; filename="test.wav"
+Content-Type: audio/wav
+
+< /chemin/vers/votre/fichier/test.wav
+------boundary--
+
+###
+
+# ─── LISTER LES AUDIOS 
+GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios
+Authorization: Bearer {{login.response.body.access_token}}
