@@ -1,6 +1,6 @@
 @baseUrl = http://127.0.0.1:8000
 
-# ─── INSCRIPTION 
+# ─── INSCRIPTION ──────────────────────────────────
 # @name register
 POST {{baseUrl}}/api/v1/auth/register
 Content-Type: application/json
@@ -13,20 +13,7 @@ Content-Type: application/json
 
 ###
 
-# ─── INSCRIPTION 2
-# @name register2
-POST {{baseUrl}}/api/v1/auth/register
-Content-Type: application/json
-
-{
-  "email": "test@example2.com",
-  "password": "secret1232",
-  "full_name": "Jean2 Test2"
-}
-
-###
-
-# ─── CONNEXION 
+# ─── CONNEXION ────────────────────────────────────
 # @name login
 POST {{baseUrl}}/api/v1/auth/login
 Content-Type: application/json
@@ -38,23 +25,25 @@ Content-Type: application/json
 
 ###
 
-# ─── PROFIL 
+# ─── PROFIL ───────────────────────────────────────
 # @name me
 GET {{baseUrl}}/api/v1/auth/me
 Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── PROJETS ───────────────────────────────────────────────────
+# ============================================================
+# PROJETS
+# ============================================================
 
-# ─── LISTER LES PROJETS 
+# ─── LISTER LES PROJETS ──────────────────────────
 # @name listProjects
 GET {{baseUrl}}/api/v1/projects/
 Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── CRÉER UN PROJET (Génère l'ID utilisé ci-dessous)
+# ─── CRÉER UN PROJET ─────────────────────────────
 # @name createProject
 POST {{baseUrl}}/api/v1/projects/
 Content-Type: application/json
@@ -67,14 +56,14 @@ Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── VOIR UN PROJET
+# ─── VOIR UN PROJET ──────────────────────────────
 # @name getProject
 GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
 Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── MODIFIER UN PROJET 
+# ─── MODIFIER UN PROJET ──────────────────────────
 # @name updateProject
 PATCH {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
 Content-Type: application/json
@@ -87,9 +76,11 @@ Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── AUDIO ─────────────────────────────────────────────────────
+# ============================================================
+# AUDIOS
+# ============================================================
 
-# ─── UPLOAD AUDIO 
+# ─── UPLOAD AUDIO ─────────────────────────────────
 # @name uploadAudio
 POST {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios
 Authorization: Bearer {{login.response.body.access_token}}
@@ -104,14 +95,53 @@ Content-Type: audio/wav
 
 ###
 
-# ─── LISTER LES AUDIOS 
+# ─── LISTER LES AUDIOS ────────────────────────────
 # @name listAudios
 GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios
 Authorization: Bearer {{login.response.body.access_token}}
 
 ###
 
-# ─── SUPPRIMER UN PROJET (À exécuter en dernier !)
+# ─── URL D'ÉCOUTE ─────────────────────────────────
+# @name audioUrl
+GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios/{{uploadAudio.response.body.id}}/url
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── TÉLÉCHARGER ──────────────────────────────────
+# @name downloadAudio
+GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios/{{uploadAudio.response.body.id}}/download
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── LANCER LA TRANSCRIPTION ──────────────────────
+# @name transcribe
+POST {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios/{{uploadAudio.response.body.id}}/transcribe
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── RÉSULTAT TRANSCRIPTION ───────────────────────
+# @name transcript
+GET {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios/{{uploadAudio.response.body.id}}/transcript
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ─── SUPPRIMER UN AUDIO ───────────────────────────
+# @name deleteAudio
+DELETE {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}/audios/{{uploadAudio.response.body.id}}
+Authorization: Bearer {{login.response.body.access_token}}
+
+###
+
+# ============================================================
+# NETTOYAGE
+# ============================================================
+
+# ─── SUPPRIMER LE PROJET ──────────────────────────
 # @name deleteProject
 DELETE {{baseUrl}}/api/v1/projects/{{createProject.response.body.id}}
 Authorization: Bearer {{login.response.body.access_token}}

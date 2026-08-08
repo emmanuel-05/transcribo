@@ -15,12 +15,13 @@ from app.core.config import get_settings
 from app.infrastructure.db.models.project import Project
 from app.infrastructure.db.models.audio_file import AudioFile, AudioStatus
 from app.infrastructure.db.models.user import User
-from app.infrastructure.storage.s3 import upload_file_to_s3
+from app.infrastructure.db.models.transcript import Transcript
 from app.api.v1.endpoints.auth import get_current_user
 from app.api.v1.schemas.audio import AudioFileResponse, AudioListResponse
+from app.infrastructure.storage.s3 import upload_file_to_s3
 from app.infrastructure.storage.s3 import generate_presigned_url, s3_client
-
-
+from app.infrastructure.storage.s3 import delete_file_from_s3
+from app.workers.transcription_worker import process_audio
 settings = get_settings()
 
 router = APIRouter(prefix="/projects", tags=["Audios"])
@@ -217,3 +218,91 @@ async def get_audio_url(
     )
     
     return {"url": url, "filename": audio.original_filename}
+
+@router.delete("/{project_id}/audios/{audio_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_audio(
+    project_id: uuid.UUID,
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Supprime un fichier audio et son stockage S3."""
+    # Vérifie le projet
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    # Récupère le fichier
+    result = await db.execute(
+        select(AudioFile).where(
+            AudioFile.id == audio_id,
+            AudioFile.project_id == project_id,
+        )
+    )
+    audio = result.scalar_one_or_none()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+
+    # Supprime de la base de données (cascade sur les transcriptions)
+    await db.delete(audio)
+    return None
+
+@router.post("/{project_id}/audios/{audio_id}/transcribe", status_code=202)
+async def start_transcription(
+    project_id: uuid.UUID,
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lance la transcription asynchrone d'un fichier audio."""
+    # Vérifications...
+    result = await db.execute(
+        select(AudioFile).where(
+            AudioFile.id == audio_id,
+            AudioFile.project_id == project_id,
+        )
+    )
+    audio = result.scalar_one_or_none()
+    if not audio:
+        raise HTTPException(status_code=404, detail="Fichier non trouvé")
+
+    if audio.status == AudioStatus.TRANSCRIBING:
+        raise HTTPException(status_code=400, detail="Transcription déjà en cours")
+
+    # Lance la transcription en arrière-plan
+    import asyncio as asyncio_module
+    from app.workers.transcription_worker import process_audio
+    
+    asyncio_module.create_task(process_audio(audio.id))
+
+    return {"message": "Transcription lancée", "audio_id": str(audio_id)}
+
+@router.get("/{project_id}/audios/{audio_id}/transcript")
+async def get_transcript(
+    project_id: uuid.UUID,
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Récupère la transcription d'un fichier audio."""
+    result = await db.execute(
+        select(Transcript).where(Transcript.audio_file_id == audio_id)
+    )
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Aucune transcription trouvée")
+    
+    return {
+        "id": str(transcript.id),
+        "raw_text": transcript.raw_text,
+        "corrected_text": transcript.corrected_text,
+        "status": transcript.status,
+        "segments": transcript.raw_json.get("segments", []) if transcript.raw_json else [],
+    }
+
