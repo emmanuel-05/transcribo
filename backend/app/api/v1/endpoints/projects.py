@@ -5,9 +5,11 @@ from sqlalchemy import select, func
 from typing import List
 import uuid
 
+from pydantic import BaseModel
 from app.core.database import get_db
 from app.infrastructure.db.models.project import Project
 from app.infrastructure.db.models.user import User
+from app.infrastructure.db.models.glossary import Glossary
 from app.api.v1.endpoints.auth import get_current_user
 from app.api.v1.schemas.project import (
     ProjectCreate,
@@ -156,3 +158,40 @@ async def delete_project(
     await db.delete(project)
     # Pas besoin de flush — get_db() fera le commit
     return None  # 204 No Content
+
+# ─── GLOSSAIRE D'UN PROJET ─────────────────────
+class GlossaryUpdate(BaseModel):
+    terms: list[str]
+
+@router.get("/{project_id}/glossary")
+async def get_glossary(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Glossary).where(Glossary.project_id == project_id)
+    )
+    glossary = result.scalar_one_or_none()
+    return {"terms": glossary.terms if glossary else []}
+
+@router.put("/{project_id}/glossary")
+async def update_glossary(
+    project_id: uuid.UUID,
+    data: GlossaryUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await db.execute(
+        select(Glossary).where(Glossary.project_id == project_id)
+    )
+    glossary = result.scalar_one_or_none()
+    
+    if glossary:
+        glossary.terms = data.terms
+    else:
+        glossary = Glossary(project_id=project_id, terms=data.terms)
+        db.add(glossary)
+    
+    await db.flush()
+    return {"terms": glossary.terms}

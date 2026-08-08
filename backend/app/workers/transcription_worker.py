@@ -23,9 +23,19 @@ async def process_audio(audio_id: uuid.UUID) -> None:
             audio.status = AudioStatus.TRANSCRIBING
             await db.commit()
 
-            # Deepgram accepte tous les formats directement
-            result = await transcribe_audio(audio.storage_path_raw)
+            # Récupère le glossaire du projet
+            from app.infrastructure.db.models.glossary import Glossary
+            glossary_result = await db.execute(
+                select(Glossary).where(Glossary.project_id == audio.project_id)
+            )
+            glossary = glossary_result.scalar_one_or_none()
+            key_terms = glossary.terms if glossary else None
+            print(f"🔑 Key Terms envoyées : {key_terms}")
 
+            # Deepgram accepte tous les formats directement
+            result = await transcribe_audio(audio.storage_path_raw, key_terms=key_terms)
+            print(f"📝 Texte transcrit : {result['text'][:200]}...")
+            
             # Crée la transcription en base
             from app.infrastructure.db.models.transcript import Transcript
             transcript = Transcript(

@@ -12,15 +12,19 @@ from pathlib import Path
 #import des modules internes
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.api.v1.schemas.audio import AudioFileResponse, AudioListResponse
+from app.api.v1.endpoints.auth import get_current_user
+
 from app.infrastructure.db.models.project import Project
 from app.infrastructure.db.models.audio_file import AudioFile, AudioStatus
 from app.infrastructure.db.models.user import User
 from app.infrastructure.db.models.transcript import Transcript
-from app.api.v1.endpoints.auth import get_current_user
-from app.api.v1.schemas.audio import AudioFileResponse, AudioListResponse
 from app.infrastructure.storage.s3 import upload_file_to_s3
 from app.infrastructure.storage.s3 import generate_presigned_url, s3_client
 from app.infrastructure.storage.s3 import delete_file_from_s3
+from app.infrastructure.ai_services.llm_correction import correct_transcript
+
+
 from app.workers.transcription_worker import process_audio
 settings = get_settings()
 
@@ -304,5 +308,41 @@ async def get_transcript(
         "corrected_text": transcript.corrected_text,
         "status": transcript.status,
         "segments": transcript.raw_json.get("segments", []) if transcript.raw_json else [],
+    }
+
+@router.post("/{project_id}/audios/{audio_id}/correct")
+async def correct_transcription(
+    project_id: uuid.UUID,
+    audio_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Corrige automatiquement la transcription avec le LLM."""
+    result = await db.execute(
+        select(Transcript).where(Transcript.audio_file_id == audio_id)
+    )
+    transcript = result.scalar_one_or_none()
+    
+    if not transcript:
+        raise HTTPException(status_code=404, detail="Aucune transcription trouvée")
+    
+    if not transcript.raw_text:
+        raise HTTPException(status_code=400, detail="Transcription vide")
+
+    # Correction
+    transcript.status = "correcting"
+    await db.commit()
+    
+    corrected = await correct_transcript(transcript.raw_text)
+    
+    transcript.corrected_text = corrected
+    transcript.status = "corrected"
+    await db.commit()
+    
+    return {
+        "id": str(transcript.id),
+        "raw_text": transcript.raw_text,
+        "corrected_text": transcript.corrected_text,
+        "status": transcript.status,
     }
 

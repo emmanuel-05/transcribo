@@ -5,7 +5,7 @@ import { useAuthStore } from "@/store/authStore";
 import api from "@/services/api";
 import {
   ArrowLeft, Upload, FileAudio, Clock, Play, Pause,
-  Trash2, Mic, FileText, Loader2
+  Trash2, Mic, FileText, Loader2, Sparkles
 } from "lucide-react";
 
 interface AudioFile {
@@ -39,9 +39,42 @@ export default function ProjectPage() {
   const [transcripts, setTranscripts] = useState<Record<string, TranscriptData>>({});
   const [showTranscriptId, setShowTranscriptId] = useState<string | null>(null);
 
+  /* Glossaire */
+  const [showGlossary, setShowGlossary] = useState(false);
+  const [glossaryTerms, setGlossaryTerms] = useState<string[]>([]);
+  const [newTerm, setNewTerm] = useState("");
+
+  const loadGlossary = async () => {
+    try {
+      const res = await api.get(`/projects/${id}/glossary`);
+      setGlossaryTerms(res.data.terms);
+    } catch {}
+  };
+
+  const addTerm = async () => {
+    if (!newTerm.trim()) return;
+    const updated = [...glossaryTerms, newTerm.trim()];
+    await api.put(`/projects/${id}/glossary`, { terms: updated });
+    setGlossaryTerms(updated);
+    setNewTerm("");
+  };
+
+  const removeTerm = async (term: string) => {
+    const updated = glossaryTerms.filter(t => t !== term);
+    await api.put(`/projects/${id}/glossary`, { terms: updated });
+    setGlossaryTerms(updated);
+  };
+
   useEffect(() => { fetchMe(); }, []);
   useEffect(() => {
     if (isAuthenticated && id) { loadProject(); loadAudios(); }
+  }, [isAuthenticated, id]);
+  useEffect(() => {
+    if (isAuthenticated && id) {
+      loadProject();
+      loadAudios();
+      loadGlossary();
+    }
   }, [isAuthenticated, id]);
 
   const loadProject = async () => {
@@ -138,6 +171,15 @@ export default function ProjectPage() {
     } catch { alert("Aucune transcription trouvée"); }
   };
 
+  const handleCorrect = async (audioId: string) => {
+    try {
+      await api.post(`/projects/${id}/audios/${audioId}/correct`);
+      await loadTranscript(audioId);
+    } catch (err: any) {
+      alert(err.response?.data?.detail || "Erreur correction");
+    }
+  };
+
   if (!project) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -182,6 +224,45 @@ export default function ProjectPage() {
         )}
 
         <h2 className="text-lg font-semibold mb-4">Fichiers audio ({audios.length})</h2>
+        
+        {/* Glossaire */}
+        <div className="mb-6">
+          <button
+            onClick={() => setShowGlossary(!showGlossary)}
+            className="text-sm text-purple-600 flex items-center gap-2"
+          >
+            Glossaire métier ({glossaryTerms.length} termes)
+          </button>
+          {showGlossary && (
+            <div className="bg-white border rounded-lg p-4 mt-2">
+              <div className="flex gap-2 mb-3">
+                <input
+                  type="text"
+                  value={newTerm}
+                  onChange={(e) => setNewTerm(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && addTerm()}
+                  placeholder="Ajouter un terme..."
+                  className="flex-1 border rounded px-3 py-1 text-sm"
+                />
+                <button onClick={addTerm} className="bg-purple-600 text-white px-3 py-1 rounded text-sm">
+                  Ajouter
+                </button>
+              </div>
+              {glossaryTerms.length === 0 ? (
+                <p className="text-gray-400 text-sm">Aucun terme. Ajoutez des mots importants (noms propres, termes techniques).</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {glossaryTerms.map((term) => (
+                    <span key={term} className="bg-purple-50 text-purple-700 px-2 py-1 rounded text-sm flex items-center gap-1">
+                      {term}
+                      <button onClick={() => removeTerm(term)} className="hover:text-red-500">×</button>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {audios.length === 0 && !uploading ? (
           <div className="text-center py-12 text-gray-500">
@@ -221,6 +302,7 @@ export default function ProjectPage() {
                             : <Mic size={20} className="text-purple-600" />}
                         </button>
                       )}
+
                       {/* Voir transcription */}
                       {audio.status === "transcribed" && (
                         <button onClick={() => loadTranscript(audio.id)}
@@ -228,6 +310,13 @@ export default function ProjectPage() {
                           <FileText size={20} className="text-green-600" />
                         </button>
                       )}
+                      {transcripts[audio.id] && transcripts[audio.id].status === "raw" && (
+                        <button onClick={() => handleCorrect(audio.id)}
+                          className="p-2 hover:bg-orange-50 rounded" title="Corriger avec IA">
+                          <Sparkles size={20} className="text-orange-500" />
+                        </button>
+                      )}
+
                       {/* Play */}
                       <button onClick={() => handlePlay(audio.id)}
                         className="p-2 hover:bg-gray-100 rounded" title="Écouter">
@@ -235,6 +324,7 @@ export default function ProjectPage() {
                           ? <Pause size={20} className="text-blue-600" />
                           : <Play size={20} className="text-blue-600" />}
                       </button>
+
                       {/* Delete */}
                       <button onClick={() => handleDelete(audio.id, audio.original_filename)}
                         className="p-2 hover:bg-red-50 rounded" title="Supprimer">
@@ -252,16 +342,42 @@ export default function ProjectPage() {
                 {/* Bloc transcription */}
                 {showTranscriptId === audio.id && transcripts[audio.id] && (
                   <div className="bg-white border border-green-200 rounded-lg p-4 mt-2">
-                    <div className="flex justify-between items-center mb-2">
+                    <div className="flex justify-between items-center mb-3">
                       <h3 className="font-semibold text-green-800 flex items-center gap-2">
                         <FileText size={18} /> Transcription
                       </h3>
                       <button onClick={() => setShowTranscriptId(null)}
                         className="text-gray-400 hover:text-gray-600">✕</button>
                     </div>
-                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
-                      {transcripts[audio.id].raw_text}
-                    </p>
+
+                    {/* Deux colonnes : brute vs corrigée */}
+                    <div className="grid grid-cols-2 gap-4">
+                      {/* Version brute */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1">
+                          <span className="w-2 h-2 bg-yellow-400 rounded-full"></span> Brute
+                        </h4>
+                        <div className="bg-gray-50 rounded p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
+                          {transcripts[audio.id].raw_text || "En attente..."}
+                        </div>
+                      </div>
+
+                      {/* Version corrigée */}
+                      <div>
+                        <h4 className="text-xs font-semibold text-gray-500 uppercase mb-2 flex items-center gap-1">
+                          <span className="w-2 h-2 bg-green-400 rounded-full"></span> Corrigée
+                        </h4>
+                        <div className="bg-green-50 rounded p-3 text-sm text-gray-700 whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto">
+                          {transcripts[audio.id].corrected_text ? (
+                            transcripts[audio.id].corrected_text
+                          ) : (
+                            <span className="text-gray-400 italic">Pas encore corrigée</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Segments (optionnel) */}
                     {transcripts[audio.id].segments?.length > 0 && (
                       <details className="mt-3">
                         <summary className="text-sm text-gray-500 cursor-pointer">

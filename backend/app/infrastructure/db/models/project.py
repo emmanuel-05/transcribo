@@ -43,6 +43,7 @@ class Project(Base):
     # Relations
     owner = relationship("User", back_populates="projects")
     audio_files = relationship("AudioFile", back_populates="project", cascade="all, delete-orphan")
-
+    glossary = relationship("Glossary", back_populates="project", uselist=False, cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<Project(id={self.id}, name={self.name})>"
