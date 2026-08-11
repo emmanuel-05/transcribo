@@ -132,21 +132,23 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
         </div>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="speed-select" className="text-xs text-gray-500 hidden sm:block">Vitesse :</label>
-          <select
-            id="speed-select"
+          <label htmlFor="speed-range" className="text-xs text-gray-500 hidden sm:block">Vitesse :</label>
+          <input
+            id="speed-range"
+            type="range"
+            min="0.5"
+            max="3"
+            step="0.1"
             value={playbackRate}
-            onChange={handleSpeedChange}
-            className="text-xs text-gray-600 bg-transparent border border-gray-200 rounded px-1 py-0.5 focus:outline-none cursor-pointer hover:bg-gray-50 transition-colors"
-          >
-            <option value="0.5">0.5x</option>
-            <option value="0.75">0.75x</option>
-            <option value="1">1x</option>
-            <option value="1.25">1.25x</option>
-            <option value="1.5">1.5x</option>
-            <option value="1.75">1.75x</option>
-            <option value="2">2x</option>
-          </select>
+            onChange={(e) => {
+              const newRate = parseFloat(e.target.value);
+              setPlaybackRate(newRate);
+              if (audioRef.current) audioRef.current.playbackRate = newRate;
+            }}
+            className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600 focus:outline-none"
+            title="Vitesse de lecture"
+          />
+          <span className="text-xs text-gray-700 font-medium min-w-[2.5rem] text-right">{playbackRate.toFixed(1)}x</span>
         </div>
       </div>
     </div>

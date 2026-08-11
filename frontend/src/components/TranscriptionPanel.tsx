@@ -24,6 +24,9 @@ interface TranscriptionPanelProps {
   onSegmentClick: (start: number) => void;
   activeSegmentId: number | null;
   onTranscriptUpdate: (newTranscript: TranscriptData) => void;
+  audioFilename: string;
+  onShowHistory: () => void;
+  onGenerateDoc: () => void;
 }
 
 export default function TranscriptionPanel({
@@ -33,6 +36,9 @@ export default function TranscriptionPanel({
   onSegmentClick,
   activeSegmentId,
   onTranscriptUpdate,
+  audioFilename,
+  onShowHistory,
+  onGenerateDoc,
 }: TranscriptionPanelProps) {
   const [isOpen, setIsOpen] = useState(true);
 
@@ -160,13 +166,45 @@ export default function TranscriptionPanel({
       >
         <span className="flex items-center gap-2">
           {isOpen ? <ChevronDown size={18} className="text-gray-500" /> : <ChevronRight size={18} className="text-gray-500" />}
-          Transcription
+          ÉDITION : {audioFilename}
         </span>
       </button>
 
       {/* Contenu Accordéon */}
       {isOpen && (
-        <div className="p-4 grid grid-cols-1 xl:grid-cols-2 gap-6 border-t border-gray-200">
+        <div className="flex flex-col">
+          {/* Barre d'outils */}
+          <div className="p-4 border-t border-gray-200 flex flex-wrap items-center justify-between gap-4 bg-white">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onShowHistory}
+                className="text-sm px-3 py-1.5 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium shadow-sm"
+              >
+                Historique
+              </button>
+              <button
+                onClick={onGenerateDoc}
+                className="text-sm px-3 py-1.5 rounded bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 transition-colors font-medium shadow-sm"
+              >
+                Générer DOCX
+              </button>
+            </div>
+            <div>
+              {["raw", "uploaded", "transcribed"].includes(transcript.status) && (
+                <button
+                  onClick={handleCorrectAI}
+                  disabled={isCorrectingAI || transcript.status === "correcting"}
+                  className="text-sm px-4 py-1.5 rounded bg-gray-800 text-white hover:bg-gray-700 transition-colors flex items-center gap-2 font-medium shadow-sm disabled:opacity-50"
+                >
+                  {isCorrectingAI || transcript.status === "correcting" ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Corriger avec IA
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Editeur */}
+          <div className="p-4 grid grid-cols-1 xl:grid-cols-2 gap-6 border-t border-gray-200 bg-gray-50">
           {/* Colonne Brute */}
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -209,16 +247,6 @@ export default function TranscriptionPanel({
               <h3 className="text-sm font-medium text-gray-700">Texte corrigé</h3>
               {!isEditingCorrected ? (
                 <div className="flex items-center gap-2">
-                  {["raw", "uploaded", "transcribed"].includes(transcript.status) && (
-                    <button
-                      onClick={handleCorrectAI}
-                      disabled={isCorrectingAI || transcript.status === "correcting"}
-                      className="py-1 px-2 text-xs rounded bg-gray-800 text-white hover:bg-gray-700 transition-colors flex items-center gap-1 disabled:opacity-50"
-                    >
-                      {isCorrectingAI || transcript.status === "correcting" ? <Loader2 size={12} className="animate-spin" /> : null}
-                      Corriger avec IA
-                    </button>
-                  )}
                   <button
                     onClick={() => setIsEditingCorrected(true)}
                     className="py-1 px-2 text-xs rounded bg-transparent hover:bg-gray-100 text-gray-600 transition-colors flex items-center gap-1"
@@ -249,6 +277,7 @@ export default function TranscriptionPanel({
             </div>
             
             {renderCorrectedContent()}
+          </div>
           </div>
         </div>
       )}

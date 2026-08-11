@@ -15,9 +15,10 @@ interface AudioCardProps {
   onPlay: (audio: AudioFile) => void;
   onTranscribe: (id: string) => void;
   onEdit: (id: string) => void;
-  onDownload: (id: string, format: string) => void;
   onDelete: (id: string) => void;
   isTranscribing?: boolean;
+  isSelected?: boolean;
+  onToggleSelect?: (id: string, checked: boolean) => void;
 }
 
 export default function AudioCard({
@@ -26,9 +27,10 @@ export default function AudioCard({
   onPlay,
   onTranscribe,
   onEdit,
-  onDownload,
   onDelete,
-  isTranscribing = false
+  isTranscribing = false,
+  isSelected = false,
+  onToggleSelect
 }: AudioCardProps) {
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -52,34 +54,38 @@ export default function AudioCard({
   };
 
   return (
-    <div className={`border rounded p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${isActive ? "border-gray-400 bg-gray-50" : "border-gray-200 bg-white"}`}>
-      <div className="flex items-center gap-3">
-        <div className="p-2 bg-gray-100 rounded text-gray-500">
-          <FileAudio size={20} />
+    <div className={`border-b border-gray-100 last:border-b-0 py-2 px-4 flex items-center justify-between gap-4 transition-colors ${isActive ? "bg-gray-50" : "bg-white hover:bg-gray-50"}`}>
+      <div className="flex items-center gap-3 overflow-hidden flex-1">
+        {onToggleSelect && (
+          <input 
+            type="checkbox"
+            checked={isSelected}
+            onChange={(e) => onToggleSelect(audio.id, e.target.checked)}
+            className="rounded border-gray-300 text-gray-800 focus:ring-gray-400 shrink-0 cursor-pointer"
+          />
+        )}
+        <div className="text-gray-400 shrink-0">
+          <FileAudio size={16} />
         </div>
-        <div>
-          <h3 className="font-medium text-gray-900 text-sm">{audio.original_filename}</h3>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-gray-500 uppercase">{audio.format}</span>
-            <span className="text-gray-300">•</span>
-            <span className="text-xs text-gray-500">
-              {new Date(audio.created_at).toLocaleString("fr-FR", {
-                dateStyle: "short",
-                timeStyle: "short",
-              })}
-            </span>
-            <span className="text-gray-300">•</span>
+        <div className="flex items-center gap-3 truncate w-full">
+          <span className="font-medium text-gray-900 text-sm truncate max-w-[200px]" title={audio.original_filename}>{audio.original_filename}</span>
+          <span className="text-xs text-gray-400 uppercase shrink-0">{audio.format}</span>
+          <span className="text-xs text-gray-400 shrink-0">
+            {new Date(audio.created_at).toLocaleDateString("fr-FR")}
+          </span>
+          <div className="shrink-0">
             {getStatusBadge(audio.status)}
           </div>
         </div>
       </div>
       
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex items-center gap-1 shrink-0">
         {["uploaded", "error"].includes(audio.status) && (
           <button
             onClick={() => onTranscribe(audio.id)}
             disabled={isTranscribing}
-            className="text-sm px-3 py-1 rounded bg-transparent border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+            className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
+            title="Lancer la transcription"
           >
             Transcrire
           </button>
@@ -88,30 +94,24 @@ export default function AudioCard({
         {["transcribed", "corrected"].includes(audio.status) && (
           <button
             onClick={() => onEdit(audio.id)}
-            className="text-sm px-3 py-1 rounded bg-gray-800 text-white hover:bg-gray-700 transition-colors flex items-center gap-1"
+            className="p-1.5 rounded text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+            title="Éditer la transcription"
           >
-            <Edit3 size={14} /> Éditer
+            <Edit3 size={16} />
           </button>
         )}
 
         <button
           onClick={() => onPlay(audio)}
-          className={`text-sm px-3 py-1 rounded transition-colors flex items-center gap-1 ${isActive ? "bg-gray-200 text-gray-900 font-medium" : "bg-transparent text-gray-600 hover:bg-gray-100 border border-transparent"}`}
+          className={`p-1.5 rounded transition-colors ${isActive ? "bg-gray-200 text-gray-900" : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"}`}
+          title="Écouter l'audio"
         >
-          <Play size={14} /> Écouter
-        </button>
-
-        <button
-          onClick={() => onDownload(audio.id, audio.format)}
-          className="text-sm px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 rounded transition-colors"
-          title="Télécharger"
-        >
-          <Download size={16} />
+          <Play size={16} />
         </button>
 
         <button
           onClick={() => onDelete(audio.id)}
-          className="text-sm px-2 py-1 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded transition-colors"
+          className="p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded transition-colors"
           title="Supprimer"
         >
           <Trash2 size={16} />
