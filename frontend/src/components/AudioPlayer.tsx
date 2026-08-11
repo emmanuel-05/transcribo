@@ -112,7 +112,7 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
           step="0.1"
           value={progress}
           onChange={handleSeek}
-          className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600 focus:outline-none"
+          className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
           title="Avancer / Reculer"
         />
       </div>
@@ -136,7 +136,7 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
           <input
             id="speed-range"
             type="range"
-            min="0.5"
+            min="0.4"
             max="3"
             step="0.1"
             value={playbackRate}
@@ -145,7 +145,7 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
               setPlaybackRate(newRate);
               if (audioRef.current) audioRef.current.playbackRate = newRate;
             }}
-            className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-gray-600 focus:outline-none"
+            className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
             title="Vitesse de lecture"
           />
           <span className="text-xs text-gray-700 font-medium min-w-[2.5rem] text-right">{playbackRate.toFixed(1)}x</span>

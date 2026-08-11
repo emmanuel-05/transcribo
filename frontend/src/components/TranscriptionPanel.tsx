@@ -123,9 +123,9 @@ export default function TranscriptionPanel({
 
     return (
       <div className="w-full h-48 p-3 border border-gray-200 rounded overflow-y-auto bg-gray-50 text-gray-800 text-sm leading-relaxed">
-        {transcript.segments.map((seg) => (
+        {transcript.segments.map((seg, idx) => (
           <span
-            key={seg.id}
+            key={seg.id ? `seg-${seg.id}-${idx}` : `seg-idx-${idx}`}
             onClick={() => onSegmentClick(seg.start)}
             className={`cursor-pointer transition-colors px-1 rounded ${
               activeSegmentId === seg.id ? "bg-gray-200 font-medium" : "hover:bg-gray-100"
