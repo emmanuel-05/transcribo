@@ -36,3 +36,4 @@ class Transcript(Base):
 
     # Relation inverse
     audio_file = relationship("AudioFile", back_populates="transcripts")
+    versions = relationship("TranscriptVersion", back_populates="transcript", cascade="all, delete-orphan", order_by="TranscriptVersion.version_number")

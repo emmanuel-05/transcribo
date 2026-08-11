@@ -2,57 +2,75 @@
 import uuid
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
-from app.infrastructure.db.models.audio_file import AudioFile, AudioStatus
+from app.core.config import get_settings
 from app.infrastructure.ai_services.deepgram_service import transcribe_audio
+from app.infrastructure.audio_converter import convert_to_wav
+from app.infrastructure.db.models.audio_file import AudioFile, AudioStatus
+from app.infrastructure.db.models.transcript_version import TranscriptVersion
+from app.infrastructure.db.models.glossary import Glossary
+
+settings = get_settings()
+NEED_CONVERSION = {"dss", "ds2"}
 
 
 async def process_audio(audio_id: uuid.UUID) -> None:
-    """
-    Traite un fichier audio avec Deepgram Nova-3.
-    Plus besoin de conversion : Deepgram accepte tous les formats natifs.
-    """
+    print(f"\n🚀 Transcription: {audio_id}")
+    
     async with AsyncSessionLocal() as db:
-        # Récupère le fichier
         result = await db.execute(select(AudioFile).where(AudioFile.id == audio_id))
         audio = result.scalar_one_or_none()
         if not audio:
             return
 
         try:
-            # Transcription directe (pas de conversion)
             audio.status = AudioStatus.TRANSCRIBING
             await db.commit()
 
-            # Récupère le glossaire du projet
-            from app.infrastructure.db.models.glossary import Glossary
             glossary_result = await db.execute(
                 select(Glossary).where(Glossary.project_id == audio.project_id)
             )
             glossary = glossary_result.scalar_one_or_none()
             key_terms = glossary.terms if glossary else None
-            print(f"🔑 Key Terms envoyées : {key_terms}")
+            print(f"🔑 Key Terms: {key_terms}")
 
-            # Deepgram accepte tous les formats directement
-            result = await transcribe_audio(audio.storage_path_raw, key_terms=key_terms)
-            print(f"📝 Texte transcrit : {result['text'][:200]}...")
-            
-            # Crée la transcription en base
+            # Convertir DSS/DS2 avant Deepgram
+            if audio.format in NEED_CONVERSION:
+                print(f"🔄 Conversion {audio.format} via Convertio...")
+                audio_key = await convert_to_wav(
+                    audio.storage_path_raw, audio.format, str(audio.project_id)
+                )
+                audio.storage_path_converted = audio_key
+                # Utiliser le bucket processed-audio pour le fichier converti
+                result = await transcribe_audio(
+                    audio_key, key_terms=key_terms,
+                    bucket=settings.S3_BUCKET_PROCESSED_AUDIO
+                )
+            else:
+                result = await transcribe_audio(audio.storage_path_raw, key_terms=key_terms)
+
+            print(f"📝 OK: {result['text'][:100]}...")
+
             from app.infrastructure.db.models.transcript import Transcript
             transcript = Transcript(
                 audio_file_id=audio.id,
                 raw_text=result["text"],
-                raw_json={
-                    "segments": result["segments"],
-                    "language": result["language"],
-                },
+                raw_json={"segments": result["segments"], "language": result["language"]},
                 status="raw",
             )
             db.add(transcript)
-            
+            await db.flush()
+
+            v1 = TranscriptVersion(
+                transcript_id=transcript.id, version_number=1,
+                content=result["text"], source="whisper",
+            )
+            db.add(v1)
+
             audio.status = AudioStatus.TRANSCRIBED
             await db.commit()
+            print("✅ Terminé!")
 
         except Exception as e:
+            print(f"❌ {e}")
             audio.status = AudioStatus.ERROR
             await db.commit()
-            raise e

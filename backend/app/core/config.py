@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     IA_SERVICE_URL: str = os.getenv("IA_SERVICE_URL", "http://localhost:8001")
     DEEPGRAM_API_KEY: str = os.getenv("DEEPGRAM_API_KEY", "")
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    CONVERTIO_API_KEY: str = os.getenv("CONVERTIO_API_KEY", "")
     
     # ─── Google OAuth ────────────────────────
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
