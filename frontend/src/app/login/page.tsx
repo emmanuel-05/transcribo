@@ -22,21 +22,21 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center blur-s bg-gray-100">
-      <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-md w-96">
-        <h1 className="text-2xl text-blue-600 font-bold mb-6 ">Connexion Transcribo</h1>
-        {error && <div className="bg-red-50 text-red-600 p-3 rounded mb-4">{error}</div>}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-4">
+      <form onSubmit={handleSubmit} className="bg-white p-8 rounded border border-gray-200 w-full max-w-md shadow-sm">
+        <h1 className="text-xl text-gray-900 font-semibold mb-6 text-center">Connexion Transcribo</h1>
+        {error && <div className="bg-gray-100 text-gray-700 border border-gray-300 p-3 rounded mb-4 text-sm">{error}</div>}
         <input
           type="email" placeholder="Email" value={email}
           onChange={(e) => setEmail(e.target.value)}
-          className="w-full border p-2 rounded mb-3 text-gray-400" required
+          className="w-full border border-gray-300 bg-white text-gray-900 p-2 rounded mb-4 focus:ring-1 focus:ring-gray-400 outline-none transition-all" required
         />
         <input
           type="password" placeholder="Mot de passe" value={password}
           onChange={(e) => setPassword(e.target.value)}
-          className="w-full border p-2 rounded mb-4 text-gray-400" required
+          className="w-full border border-gray-300 bg-white text-gray-900 p-2 rounded mb-6 focus:ring-1 focus:ring-gray-400 outline-none transition-all" required
         />
-        <button type="submit" className="w-full bg-blue-600 text-white p-2 rounded hover:bg-blue-700">
+        <button type="submit" className="w-full bg-gray-800 text-white p-2 rounded hover:bg-gray-700 font-medium transition-colors">
           Se connecter
         </button>
       </form>

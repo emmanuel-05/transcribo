@@ -51,8 +51,8 @@ export default function DashboardPage() {
 
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-gray-500">Chargement...</p>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <p className="text-gray-500 text-sm">Chargement...</p>
       </div>
     );
   }
@@ -60,13 +60,13 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navbar */}
-      <nav className="bg-white shadow-sm p-4 flex justify-between items-center">
-        <h1 className="text-xl font-bold">Transcribo</h1>
+      <nav className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
+        <h1 className="text-lg font-semibold text-gray-900">Transcribo</h1>
         <div className="flex items-center gap-4">
-          <span className="text-gray-600 text-sm">{user?.email}</span>
+          <span className="text-gray-500 text-sm">{user?.email}</span>
           <button
             onClick={handleLogout}
-            className="bg-gray-200 px-4 py-1 rounded text-sm hover:bg-gray-300"
+            className="text-sm text-gray-600 hover:text-gray-900 px-2 py-1 rounded transition-colors hover:bg-gray-100"
           >
             Déconnexion
           </button>
@@ -74,26 +74,26 @@ export default function DashboardPage() {
       </nav>
 
       {/* Contenu principal */}
-      <main className="max-w-4xl mx-auto p-8">
+      <main className="max-w-5xl mx-auto p-6 md:p-8">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold">Mes projets</h2>
+          <h2 className="text-xl font-medium text-gray-900">Mes projets</h2>
           <button
             onClick={() => setShowCreate(!showCreate)}
-            className="bg-blue-600 text-white px-4 py-2 rounded flex items-center gap-2 hover:bg-blue-700"
+            className="bg-gray-800 text-white px-3 py-1.5 rounded text-sm flex items-center gap-2 hover:bg-gray-700 transition-colors"
           >
-            <Plus size={18} /> Nouveau projet
+            <Plus size={16} /> Nouveau projet
           </button>
         </div>
 
         {/* Formulaire de création */}
         {showCreate && (
-          <form onSubmit={handleCreate} className="bg-white p-6 rounded-lg shadow mb-6">
+          <form onSubmit={handleCreate} className="bg-white p-5 rounded border border-gray-200 shadow-sm mb-6">
             <input
               type="text"
               placeholder="Nom du projet"
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
-              className="w-full border p-2 rounded mb-3"
+              className="w-full border border-gray-300 bg-white text-gray-900 p-2 rounded mb-3 focus:ring-1 focus:ring-gray-400 outline-none text-sm"
               required
               autoFocus
             />
@@ -102,19 +102,19 @@ export default function DashboardPage() {
               placeholder="Description (optionnelle)"
               value={newDesc}
               onChange={(e) => setNewDesc(e.target.value)}
-              className="w-full border p-2 rounded mb-4"
+              className="w-full border border-gray-300 bg-white text-gray-900 p-2 rounded mb-4 focus:ring-1 focus:ring-gray-400 outline-none text-sm"
             />
-            <div className="flex gap-3">
+            <div className="flex gap-2">
               <button
                 type="submit"
-                className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700"
+                className="bg-gray-800 text-white px-3 py-1.5 text-sm rounded hover:bg-gray-700 transition-colors"
               >
                 Créer
               </button>
               <button
                 type="button"
                 onClick={() => setShowCreate(false)}
-                className="bg-gray-300 px-4 py-2 rounded hover:bg-gray-400"
+                className="bg-transparent border border-gray-300 text-gray-700 px-3 py-1.5 text-sm rounded hover:bg-gray-100 transition-colors"
               >
                 Annuler
               </button>
@@ -124,43 +124,44 @@ export default function DashboardPage() {
 
         {/* Liste des projets */}
         {projectsLoading ? (
-          <p className="text-gray-500">Chargement des projets...</p>
+          <p className="text-gray-500 text-sm">Chargement des projets...</p>
         ) : projects.length === 0 ? (
           <div className="text-center py-12 text-gray-500">
-            <FolderOpen size={48} className="mx-auto mb-4 opacity-50" />
-            <p>Aucun projet pour le moment.</p>
-            <p className="text-sm">Créez votre premier projet pour commencer.</p>
+            <FolderOpen size={40} className="mx-auto mb-3 text-gray-400" />
+            <p className="text-sm">Aucun projet pour le moment.</p>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {projects.map((project) => (
               <div
                 key={project.id}
-                className="bg-white p-5 rounded-lg shadow-sm flex justify-between items-center hover:shadow-md transition-shadow"
+                className="bg-white p-5 rounded border border-gray-200 flex flex-col justify-between hover:shadow-md transition-shadow group"
               >
                 <div>
-                  <h3 className="font-semibold text-lg">{project.name}</h3>
+                  <div className="flex items-start justify-between">
+                    <h3 className="font-medium text-gray-900">{project.name}</h3>
+                    <FolderOpen size={16} className="text-gray-400" />
+                  </div>
                   {project.description && (
-                    <p className="text-gray-500 text-sm">{project.description}</p>
+                    <p className="text-gray-500 text-sm mt-1 truncate">{project.description}</p>
                   )}
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-400 mt-3">
                     Créé le {new Date(project.created_at).toLocaleDateString("fr-FR")}
                   </p>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 mt-4 pt-4 border-t border-gray-100">
                   <button
                     onClick={() => router.push(`/projects/${project.id}`)}
-                    className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-                    title="Ouvrir"
+                    className="text-gray-600 hover:text-gray-900 text-sm px-2 py-1 rounded hover:bg-gray-100 transition-colors"
                   >
-                    <FolderOpen size={18} />
+                    Ouvrir
                   </button>
                   <button
                     onClick={() => handleDelete(project.id, project.name)}
-                    className="p-2 text-red-600 hover:bg-red-50 rounded"
+                    className="text-gray-500 hover:text-red-600 text-sm px-2 py-1 rounded hover:bg-red-50 transition-colors ml-auto"
                     title="Supprimer"
                   >
-                    <Trash2 size={18} />
+                    Supprimer
                   </button>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, EmailStr
@@ -14,6 +14,7 @@ from app.core.security import (
     decode_token,
 )
 from app.infrastructure.db.models.user import User
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -84,14 +85,15 @@ async def get_current_user(
 # ─── Endpoints ──────────────────────────────────
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-async def register(request: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("100/minute")
+async def register(request: Request, body: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
     """
     Crée un nouveau compte utilisateur.
     """
     from sqlalchemy import select
     
     # Vérifie si l'email existe déjà
-    result = await db.execute(select(User).where(User.email == request.email))
+    result = await db.execute(select(User).where(User.email == body.email))
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=400,
@@ -100,9 +102,9 @@ async def register(request: UserRegisterRequest, db: AsyncSession = Depends(get_
     
     # Crée l'utilisateur
     user = User(
-        email=request.email,
-        hashed_password=hash_password(request.password),
-        full_name=request.full_name,
+        email=body.email,
+        hashed_password=hash_password(body.password),
+        full_name=body.full_name,
     )
     db.add(user)
     await db.flush()  # Pour obtenir l'ID généré
@@ -118,16 +120,17 @@ async def register(request: UserRegisterRequest, db: AsyncSession = Depends(get_
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(request: UserLoginRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("100/minute")
+async def login(request: Request, body: UserLoginRequest, db: AsyncSession = Depends(get_db)):
     """
     Authentifie un utilisateur et retourne des tokens.
     """
     from sqlalchemy import select
     
-    result = await db.execute(select(User).where(User.email == request.email))
+    result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
     
-    if not user or not verify_password(request.password, user.hashed_password):
+    if not user or not verify_password(body.password, user.hashed_password):
         raise HTTPException(
             status_code=401,
             detail="Email ou mot de passe incorrect",
@@ -143,7 +146,8 @@ async def login(request: UserLoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+@limiter.limit("300/minute")
+async def get_me(request: Request, current_user: User = Depends(get_current_user)):
     """
     Retourne les informations de l'utilisateur connecté.
     """

@@ -1,5 +1,5 @@
 # app/api/v1/endpoints/projects.py
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import List
@@ -17,6 +17,7 @@ from app.api.v1.schemas.project import (
     ProjectResponse,
     ProjectListResponse,
 )
+from app.core.rate_limit import limiter
 
 router = APIRouter(prefix="/projects", tags=["Projects"])
 
@@ -24,7 +25,9 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 # ─── LISTER MES PROJETS ────────────────────────
 
 @router.get("/", response_model=ProjectListResponse)
+@limiter.limit("300/minute")
 async def list_my_projects(
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -50,7 +53,9 @@ async def list_my_projects(
 # ─── DÉTAIL D'UN PROJET ────────────────────────
 
 @router.get("/{project_id}", response_model=ProjectResponse)
+@limiter.limit("300/minute")
 async def get_project(
+    request: Request,
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -78,7 +83,9 @@ async def get_project(
 # ─── CRÉER UN PROJET ───────────────────────────
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("300/minute")
 async def create_project(
+    request: Request,
     project_data: ProjectCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -101,7 +108,9 @@ async def create_project(
 # ─── MODIFIER UN PROJET ────────────────────────
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
+@limiter.limit("300/minute")
 async def update_project(
+    request: Request,
     project_id: uuid.UUID,
     project_data: ProjectUpdate,
     db: AsyncSession = Depends(get_db),
@@ -136,7 +145,9 @@ async def update_project(
 # ─── SUPPRIMER UN PROJET ───────────────────────
 
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("300/minute")
 async def delete_project(
+    request: Request,
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -164,7 +175,9 @@ class GlossaryUpdate(BaseModel):
     terms: list[str]
 
 @router.get("/{project_id}/glossary")
+@limiter.limit("300/minute")
 async def get_glossary(
+    request: Request,
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -176,7 +189,9 @@ async def get_glossary(
     return {"terms": glossary.terms if glossary else []}
 
 @router.put("/{project_id}/glossary")
+@limiter.limit("300/minute")
 async def update_glossary(
+    request: Request,
     project_id: uuid.UUID,
     data: GlossaryUpdate,
     db: AsyncSession = Depends(get_db),

@@ -33,7 +33,11 @@ async def process_audio(audio_id: uuid.UUID) -> None:
             key_terms = glossary.terms if glossary else None
             print(f"🔑 Key Terms: {key_terms}")
 
-            # Convertir DSS/DS2 avant Deepgram
+            # Rejeter explicitement le DS2
+            if audio.format == "ds2":
+                raise Exception("Format DS2 non supporté pour le moment. Convertissez en WAV.")
+
+            # Convertir DSS avant Deepgram
             if audio.format in NEED_CONVERSION:
                 print(f"🔄 Conversion {audio.format} via Convertio...")
                 audio_key = await convert_to_wav(

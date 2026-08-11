@@ -3,7 +3,7 @@
 # import des modules externes
 import uuid
 import io
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -29,6 +29,9 @@ from app.infrastructure.db.models.transcript_version import TranscriptVersion
 
 
 from app.workers.transcription_worker import process_audio
+from app.core.rate_limit import limiter
+import magic
+
 settings = get_settings()
 
 router = APIRouter(prefix="/projects", tags=["Audios"])
@@ -39,7 +42,9 @@ MAX_FILE_SIZE = 70 * 1024 * 1024  # 70 Mo
 
 
 @router.get("/{project_id}/audios", response_model=AudioListResponse)
+@limiter.limit("300/minute")
 async def list_audio_files(
+    request: Request,
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -73,7 +78,9 @@ async def list_audio_files(
 
 
 @router.post("/{project_id}/audios", response_model=AudioFileResponse, status_code=201)
+@limiter.limit("10/minute")
 async def upload_audio(
+    request: Request,
     project_id: uuid.UUID,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
@@ -102,6 +109,15 @@ async def upload_audio(
 
     # 3. Lit le contenu du fichier
     file_data = await file.read()
+    
+    # 3.5. Validation Magic Number (type MIME réel)
+    mime_type = magic.from_buffer(file_data, mime=True)
+    # Les formats DSS/DS2 peuvent parfois être détectés comme octet-stream
+    if not mime_type.startswith("audio/") and not mime_type.startswith("video/") and mime_type not in ["application/octet-stream", "application/x-empty"]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Fichier falsifié ou invalide. Type MIME détecté : {mime_type}. Seuls les fichiers audio sont autorisés.",
+        )
 
     # 4. Vérifie la taille
     if len(file_data) > MAX_FILE_SIZE:
@@ -141,7 +157,9 @@ async def upload_audio(
 
 
 @router.get("/{project_id}/audios/{audio_id}/download")
+@limiter.limit("300/minute")
 async def download_audio(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -201,7 +219,9 @@ async def download_audio(
 
 
 @router.get("/{project_id}/audios/{audio_id}/url")
+@limiter.limit("300/minute")
 async def get_audio_url(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -259,7 +279,9 @@ async def get_audio_url(
     return {"url": url, "filename": audio.original_filename}
 
 @router.delete("/{project_id}/audios/{audio_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("300/minute")
 async def delete_audio(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -292,7 +314,9 @@ async def delete_audio(
     return None
 
 @router.post("/{project_id}/audios/{audio_id}/transcribe", status_code=202)
+@limiter.limit("30/minute") # Transcription should be slightly more limited
 async def start_transcription(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -322,7 +346,9 @@ async def start_transcription(
     return {"message": "Transcription lancée", "audio_id": str(audio_id)}
 
 @router.get("/{project_id}/audios/{audio_id}/transcript")
+@limiter.limit("300/minute")
 async def get_transcript(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -354,7 +380,9 @@ class SaveCorrectedRequest(BaseModel):
 
 
 @router.put("/{project_id}/audios/{audio_id}/transcript/save-raw")
+@limiter.limit("300/minute")
 async def save_raw_transcript(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     data: SaveRawRequest,
@@ -394,7 +422,9 @@ async def save_raw_transcript(
 
 
 @router.put("/{project_id}/audios/{audio_id}/transcript/save")
+@limiter.limit("300/minute")
 async def save_corrected_transcript(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     data: SaveCorrectedRequest,
@@ -435,7 +465,9 @@ async def save_corrected_transcript(
 
 
 @router.post("/{project_id}/audios/{audio_id}/correct")
+@limiter.limit("30/minute") # LLM calls should be more strictly limited
 async def correct_transcription(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -487,7 +519,9 @@ async def correct_transcription(
 
 
 @router.get("/{project_id}/audios/{audio_id}/transcript/versions")
+@limiter.limit("300/minute")
 async def list_transcript_versions(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -521,7 +555,9 @@ async def list_transcript_versions(
 
 
 @router.post("/{project_id}/audios/{audio_id}/transcript/restore/{version_id}")
+@limiter.limit("300/minute")
 async def restore_transcript_version(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     version_id: uuid.UUID,
@@ -572,7 +608,9 @@ async def restore_transcript_version(
     }
 
 @router.get("/{project_id}/audios/{audio_id}/stream")
+@limiter.limit("300/minute")
 async def stream_audio(
+    request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
     token: str = Query(None),
@@ -589,7 +627,9 @@ async def stream_audio(
     if not audio:
         raise HTTPException(status_code=404)
 
-    # Pour DSS/DS2 : utiliser le fichier converti
+    if audio.format in ("dss", "ds2") and not audio.storage_path_converted:
+        raise HTTPException(status_code=400, detail="Ce fichier DSS n'a pas encore été converti. Veuillez lancer la transcription d'abord.")
+
     if audio.format in ("dss", "ds2") and audio.storage_path_converted:
         bucket = settings.S3_BUCKET_PROCESSED_AUDIO
         key = audio.storage_path_converted
@@ -598,9 +638,15 @@ async def stream_audio(
         key = audio.storage_path_raw
 
     file_obj = s3_client.get_object(Bucket=bucket, Key=key)
+    body = file_obj["Body"].read()
     
-    return StreamingResponse(
-        io.BytesIO(file_obj["Body"].read()),
+    from fastapi.responses import Response
+    return Response(
+        content=body,
         media_type="audio/wav",
-        headers={"Content-Disposition": f'inline; filename="{Path(audio.original_filename).stem}.wav"'},
+        headers={
+            "Content-Disposition": f'inline; filename="{Path(audio.original_filename).stem}.wav"',
+            "Content-Length": str(len(body)),
+            "Accept-Ranges": "bytes"
+        }
     )

@@ -1,680 +1,441 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import api from "@/services/api";
-import {
-  ArrowLeft, Upload, FileAudio, Clock, Play, Pause,
-  Trash2, Mic, FileText, Loader2, Sparkles
-} from "lucide-react";
+import axios from "axios";
+import { toast } from "react-hot-toast";
+import { ArrowLeft, Loader2, FileText, History } from "lucide-react";
 
-interface AudioFile {
-  id: string;
-  original_filename: string;
-  format: string;
-  duration_secs: number | null;
-  status: string;
-  created_at: string;
-}
-
-interface TranscriptData {
-  id: string;
-  raw_text: string;
-  corrected_text: string | null;
-  status: string;
-  segments: any[];
-}
-
-interface TranscriptVersionItem {
-  id: string;
-  version_number: number;
-  source: string;
-  content: string;
-  created_at: string | null;
-}
+import UploadZone from "@/components/UploadZone";
+import AudioCard from "@/components/AudioCard";
+import AudioPlayer from "@/components/AudioPlayer";
+import TranscriptionPanel from "@/components/TranscriptionPanel";
+import GlossaryPanel from "@/components/GlossaryPanel";
+import VersionHistoryModal from "@/components/VersionHistoryModal";
 
 export default function ProjectPage() {
-  const { id } = useParams();
+  const params = useParams();
+  const id = params.id as string;
   const router = useRouter();
-  const { isAuthenticated, fetchMe } = useAuthStore();
+
+  const { isAuthenticated, isLoading: authLoading, fetchMe } = useAuthStore();
   const [project, setProject] = useState<any>(null);
-  const [audios, setAudios] = useState<AudioFile[]>([]);
-  const [uploading, setUploading] = useState(false);
-  const [dragOver, setDragOver] = useState(false);
-  const [playingId, setPlayingId] = useState<string | null>(null);
-  const [loadingAudioId, setLoadingAudioId] = useState<string | null>(null);
-  const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [transcribingId, setTranscribingId] = useState<string | null>(null);
-  const [transcripts, setTranscripts] = useState<Record<string, TranscriptData>>({});
-  const [showTranscriptId, setShowTranscriptId] = useState<string | null>(null);
-
-  /* État pour l'éditeur à deux colonnes */
-  const [editRawText, setEditRawText] = useState("");
-  const [editCorrectedText, setEditCorrectedText] = useState("");
-  const [savingRaw, setSavingRaw] = useState(false);
-  const [savingCorrected, setSavingCorrected] = useState(false);
-  const [correctingLLM, setCorrectingLLM] = useState(false);
-  const [notification, setNotification] = useState<string | null>(null);
-
-  /* État pour la modale d'historique des versions */
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [historyAudioId, setHistoryAudioId] = useState<string | null>(null);
-  const [versions, setVersions] = useState<TranscriptVersionItem[]>([]);
-  const [loadingVersions, setLoadingVersions] = useState(false);
-  const [restoringVersionId, setRestoringVersionId] = useState<string | null>(null);
-
-  /* Glossaire */
-  const [showGlossary, setShowGlossary] = useState(false);
+  const [audios, setAudios] = useState<any[]>([]);
   const [glossaryTerms, setGlossaryTerms] = useState<string[]>([]);
-  const [newTerm, setNewTerm] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const showNotification = (msg: string) => {
-    setNotification(msg);
-    setTimeout(() => {
-      setNotification(null);
-    }, 3500);
-  };
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [activeAudio, setActiveAudio] = useState<any | null>(null);
 
-  const loadGlossary = async () => {
-    try {
-      const res = await api.get(`/projects/${id}/glossary`);
-      setGlossaryTerms(res.data.terms);
-    } catch {}
-  };
+  // States for Modals
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
-  const addTerm = async () => {
-    if (!newTerm.trim()) return;
-    const updated = [...glossaryTerms, newTerm.trim()];
-    await api.put(`/projects/${id}/glossary`, { terms: updated });
-    setGlossaryTerms(updated);
-    setNewTerm("");
-  };
+  const [showDocModal, setShowDocModal] = useState(false);
+  const [docForm, setDocForm] = useState({ expediteur: "", destinataire: "", objet: "" });
+  const [docGenerating, setDocGenerating] = useState(false);
 
-  const removeTerm = async (term: string) => {
-    const updated = glossaryTerms.filter(t => t !== term);
-    await api.put(`/projects/${id}/glossary`, { terms: updated });
-    setGlossaryTerms(updated);
-  };
+  // Transcription State
+  const [transcriptData, setTranscriptData] = useState<any>(null);
+  const [activeSegmentId, setActiveSegmentId] = useState<number | null>(null);
+  const [externalTime, setExternalTime] = useState<number | undefined>(undefined);
 
-  useEffect(() => { fetchMe(); }, []);
   useEffect(() => {
-    if (isAuthenticated && id) {
-      loadProject();
-      loadAudios();
-      loadGlossary();
+    fetchMe();
+  }, []);
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
     }
-  }, [isAuthenticated, id]);
+  }, [authLoading, isAuthenticated]);
 
   const loadProject = async () => {
     try {
       const res = await api.get(`/projects/${id}`);
       setProject(res.data);
-    } catch { router.push("/dashboard"); }
+    } catch (err) {
+      toast.error("Projet introuvable");
+      router.push("/dashboard");
+    }
   };
 
   const loadAudios = async () => {
     try {
       const res = await api.get(`/projects/${id}/audios`);
       setAudios(res.data.files);
-    } catch (err) { console.error("Erreur chargement audios", err); }
+    } catch (err) {
+      toast.error("Erreur de chargement des audios");
+    }
   };
+
+  const loadGlossary = async () => {
+    try {
+      const res = await api.get(`/projects/${id}/glossary`);
+      setGlossaryTerms(res.data.terms);
+    } catch (err) {
+      console.error("Glossaire", err);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadProject();
+      loadAudios();
+      loadGlossary();
+    }
+  }, [isAuthenticated, id]);
+
+  // Polling for processing status
+  useEffect(() => {
+    const hasProcessing = audios.some((a) => a.status === "transcribing" || a.status === "correcting");
+    if (!hasProcessing) return;
+    const intervalId = setInterval(() => {
+      loadAudios();
+      if (activeAudio && ["transcribing", "correcting"].includes(activeAudio.status)) {
+         loadTranscript(activeAudio.id);
+      }
+    }, 5000);
+    return () => clearInterval(intervalId);
+  }, [audios, activeAudio]);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
+    setUploadProgress(0);
     try {
       const formData = new FormData();
       formData.append("file", file);
-      await api.post(`/projects/${id}/audios`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+      
+      const token = localStorage.getItem("access_token");
+      await axios.post(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/projects/${id}/audios`, formData, {
+        headers: { 
+          "Content-Type": "multipart/form-data",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            setUploadProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
+          }
+        }
       });
+      toast.success("Fichier uploadé avec succès");
       await loadAudios();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Erreur lors de l'upload");
-    } finally { setUploading(false); }
-  };
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    setDragOver(false);
-    const file = e.dataTransfer.files[0];
-    if (file) handleUpload(file);
-  }, [id]);
-
-  const handlePlay = async (audioId: string) => {
-    if (playingId === audioId) {
-      setPlayingId(null);
-      setAudioUrl(null);
-      return;
-    }
-    setLoadingAudioId(audioId);
-    try {
-      const res = await api.get(`/projects/${id}/audios/${audioId}/url`);
-      setAudioUrl(res.data.url);
-      setPlayingId(audioId);
-    } catch (err: any) {
-      console.error("Erreur chargement audio", err);
-      alert(err.response?.data?.detail || "Erreur lors du chargement ou de la conversion de l'audio");
-    } finally {
-      setLoadingAudioId(null);
+      toast.error(err.response?.data?.detail || "Erreur lors de l'upload");
+    } finally { 
+      setUploading(false);
+      setUploadProgress(0);
     }
   };
 
-  const handleDelete = async (audioId: string, filename: string) => {
-    if (!confirm(`Supprimer "${filename}" ?`)) return;
+  const handleDeleteAudio = async (audioId: string) => {
+    if (!confirm("Supprimer ce fichier audio ?")) return;
     try {
       await api.delete(`/projects/${id}/audios/${audioId}`);
-      await loadAudios();
-      if (playingId === audioId) { setPlayingId(null); setAudioUrl(null); }
-      const newTranscripts = { ...transcripts };
-      delete newTranscripts[audioId];
-      setTranscripts(newTranscripts);
-      if (showTranscriptId === audioId) setShowTranscriptId(null);
-    } catch (err: any) { alert(err.response?.data?.detail || "Erreur"); }
-  };
-
-  const handleTranscribe = async (audioId: string) => {
-    setTranscribingId(audioId);
-    try {
-      await api.post(`/projects/${id}/audios/${audioId}/transcribe`);
-      const poll = setInterval(async () => {
-        try {
-          const res = await api.get(`/projects/${id}/audios/${audioId}/transcript`);
-          if (res.data && res.data.raw_text) {
-            setTranscripts(prev => ({ ...prev, [audioId]: res.data }));
-            setEditRawText(res.data.raw_text || "");
-            setEditCorrectedText(res.data.corrected_text || "");
-            setTranscribingId(null);
-            setShowTranscriptId(audioId);
-            clearInterval(poll);
-            await loadAudios();
-          }
-        } catch { /* pas encore prêt */ }
-      }, 3000);
-      setTimeout(() => { clearInterval(poll); setTranscribingId(null); }, 300000);
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Erreur transcription");
-      setTranscribingId(null);
+      toast.success("Fichier supprimé");
+      if (activeAudio?.id === audioId) {
+        setActiveAudio(null);
+        setTranscriptData(null);
+      }
+      loadAudios();
+    } catch (err) {
+      toast.error("Erreur de suppression");
     }
   };
 
   const loadTranscript = async (audioId: string) => {
     try {
       const res = await api.get(`/projects/${id}/audios/${audioId}/transcript`);
-      setTranscripts(prev => ({ ...prev, [audioId]: res.data }));
-      setEditRawText(res.data.raw_text || "");
-      setEditCorrectedText(res.data.corrected_text || "");
-      setShowTranscriptId(audioId);
-    } catch { alert("Aucune transcription trouvée"); }
-  };
-
-  /* Sauvegarde de la transcription brute */
-  const handleSaveRaw = async (audioId: string) => {
-    setSavingRaw(true);
-    try {
-      await api.put(`/projects/${id}/audios/${audioId}/transcript/save-raw`, {
-        raw_text: editRawText,
-      });
-      setTranscripts(prev => ({
-        ...prev,
-        [audioId]: { ...prev[audioId], raw_text: editRawText },
-      }));
-      showNotification("Transcription brute sauvegardée avec succès !");
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Erreur de sauvegarde de la version brute");
-    } finally {
-      setSavingRaw(false);
+      setTranscriptData(res.data);
+    } catch (err) {
+      setTranscriptData(null);
     }
   };
 
-  /* Sauvegarde de la transcription corrigée */
-  const handleSaveCorrected = async (audioId: string) => {
-    setSavingCorrected(true);
+  const handleTranscribe = async (audioId: string) => {
     try {
-      await api.put(`/projects/${id}/audios/${audioId}/transcript/save`, {
-        corrected_text: editCorrectedText,
-      });
-      setTranscripts(prev => ({
-        ...prev,
-        [audioId]: { ...prev[audioId], corrected_text: editCorrectedText, status: "corrected" },
-      }));
-      showNotification("Transcription corrigée sauvegardée avec succès !");
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Erreur de sauvegarde de la version corrigée");
-    } finally {
-      setSavingCorrected(false);
+      await api.post(`/projects/${id}/audios/${audioId}/transcribe`);
+      toast.success("Transcription lancée");
+      loadAudios();
+    } catch (err) {
+      toast.error("Erreur lors du lancement");
     }
   };
 
-  /* Correction automatique par le LLM (Groq LLaMA 3.3 70B) */
-  const handleCorrectLLM = async (audioId: string) => {
-    setCorrectingLLM(true);
+  const handlePlay = async (audio: any) => {
+    if (["dss", "ds2"].includes(audio.format.toLowerCase()) && audio.status === "uploaded") {
+      toast.error("Veuillez lancer la transcription d'abord pour convertir ce fichier DSS.");
+      return;
+    }
     try {
-      const res = await api.post(`/projects/${id}/audios/${audioId}/correct`);
-      setEditCorrectedText(res.data.corrected_text || "");
-      setTranscripts(prev => ({
-        ...prev,
-        [audioId]: {
-          ...prev[audioId],
-          corrected_text: res.data.corrected_text,
-          status: res.data.status,
-        },
-      }));
-      showNotification("Correction automatique par IA effectuée !");
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Erreur lors de la correction par l'IA");
-    } finally {
-      setCorrectingLLM(false);
+      const token = localStorage.getItem("access_token");
+      const streamUrl = `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1"}/projects/${id}/audios/${audio.id}/stream?token=${token}`;
+      setActiveAudio({ ...audio, streamUrl });
+      loadTranscript(audio.id);
+    } catch (err) {
+      toast.error("Erreur pour la lecture");
     }
   };
 
-  /* Ouverture de la modale d'historique */
-  const openHistoryModal = async (audioId: string) => {
-    setHistoryAudioId(audioId);
+  const handleEdit = (audioId: string) => {
+    const audio = audios.find((a) => a.id === audioId);
+    if (audio) {
+      setActiveAudio(audio);
+      loadTranscript(audio.id);
+    }
+  };
+
+  const handleDownload = async (audioId: string, format: string) => {
+    try {
+      const res = await api.get(`/projects/${id}/audios/${audioId}/url`);
+      const link = document.createElement("a");
+      link.href = res.data.url;
+      link.download = `audio.${format}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      toast.error("Erreur de téléchargement");
+    }
+  };
+
+  const handleTimeUpdate = (currentTime: number) => {
+    if (!transcriptData?.segments) return;
+    const currentSegment = transcriptData.segments.find(
+      (s: any) => currentTime >= s.start && currentTime <= s.end
+    );
+    if (currentSegment && activeSegmentId !== currentSegment.id) {
+      setActiveSegmentId(currentSegment.id);
+    } else if (!currentSegment) {
+      setActiveSegmentId(null);
+    }
+  };
+
+  const loadVersions = async () => {
+    if (!activeAudio) return;
     setShowHistoryModal(true);
-    setLoadingVersions(true);
+    setVersionsLoading(true);
     try {
-      const res = await api.get(`/projects/${id}/audios/${audioId}/transcript/versions`);
+      const res = await api.get(`/projects/${id}/audios/${activeAudio.id}/transcript/versions`);
       setVersions(res.data);
-    } catch (err: any) {
-      alert("Erreur lors du chargement de l'historique des versions");
+    } catch (err) {
+      toast.error("Erreur chargement historique");
     } finally {
-      setLoadingVersions(false);
+      setVersionsLoading(false);
     }
   };
 
-  /* Restauration d'une version spécifique */
-  const handleRestoreVersion = async (versionId: string) => {
-    if (!historyAudioId) return;
-    setRestoringVersionId(versionId);
+  const handleGenerateDoc = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeAudio) return;
+    setDocGenerating(true);
     try {
-      const res = await api.post(
-        `/projects/${id}/audios/${historyAudioId}/transcript/restore/${versionId}`
-      );
-      setEditCorrectedText(res.data.corrected_text);
-      setTranscripts(prev => ({
-        ...prev,
-        [historyAudioId]: {
-          ...prev[historyAudioId],
-          corrected_text: res.data.corrected_text,
-          status: "corrected",
-        },
-      }));
-      showNotification("Version restaurée avec succès !");
-      setShowHistoryModal(false);
-    } catch (err: any) {
-      alert(err.response?.data?.detail || "Erreur lors de la restauration de la version");
+      const res = await api.post(`/projects/${id}/documents/generate`, {
+        transcript_id: transcriptData.id,
+        expediteur: docForm.expediteur,
+        destinataire: docForm.destinataire,
+        objet: docForm.objet,
+      });
+      setShowDocModal(false);
+      window.open(res.data.url, "_blank");
+    } catch (err) {
+      toast.error("Erreur lors de la génération DOCX");
     } finally {
-      setRestoringVersionId(null);
+      setDocGenerating(false);
     }
   };
 
-  if (!project) {
+  if (authLoading || !project) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-gray-500">Chargement...</p>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <p className="text-gray-500 text-sm">Chargement...</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow-sm p-4 flex items-center gap-4">
-        <button onClick={() => router.push("/dashboard")} className="p-2 hover:bg-gray-100 rounded">
-          <ArrowLeft size={20} />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold">{project.name}</h1>
-          {project.description && <p className="text-sm text-gray-500">{project.description}</p>}
+    <div className="min-h-screen bg-gray-50 text-gray-900 pb-20">
+      {/* En-tête de projet */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-6xl mx-auto p-4 md:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <button
+              onClick={() => router.push("/dashboard")}
+              className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 mb-2 transition-colors"
+            >
+              <ArrowLeft size={16} /> Retour
+            </button>
+            <h1 className="text-2xl font-semibold text-gray-900">{project.name}</h1>
+            {project.description && <p className="text-gray-500 mt-1 text-sm">{project.description}</p>}
+          </div>
         </div>
-      </nav>
+      </div>
 
-      <main className="max-w-5xl mx-auto p-8">
-        <div
-          onDrop={handleDrop}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          className={`border-2 border-dashed rounded-lg p-12 text-center mb-8 transition-colors ${
-            dragOver ? "border-blue-500 bg-blue-50" : "border-gray-300"
-          }`}
-        >
-          <Upload size={48} className="mx-auto mb-4 text-gray-400" />
-          <p className="text-gray-600 mb-2">Glissez-déposez un fichier audio ici</p>
-          <p className="text-gray-400 text-sm mb-4">WAV, MP3, DSS, DS2, FLAC, OGG, M4A, AAC</p>
-          <label className="bg-blue-600 text-white px-6 py-2 rounded cursor-pointer hover:bg-blue-700 inline-block">
-            Parcourir...
-            <input type="file" className="hidden" accept=".wav,.mp3,.dss,.ds2,.flac,.ogg,.m4a,.aac"
-              onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUpload(file); }} />
-          </label>
-        </div>
-
-        {uploading && (
-          <div className="bg-blue-50 text-blue-700 p-3 rounded mb-4">Upload en cours...</div>
-        )}
-
-        <h2 className="text-lg font-semibold mb-4">Fichiers audio ({audios.length})</h2>
+      <main className="max-w-6xl mx-auto p-4 md:p-6 grid grid-cols-1 md:grid-cols-3 gap-6">
         
-        {/* Glossaire */}
-        <div className="mb-6">
-          <button
-            onClick={() => setShowGlossary(!showGlossary)}
-            className="text-sm text-purple-600 flex items-center gap-2"
-          >
-            Glossaire métier ({glossaryTerms.length} termes)
-          </button>
-          {showGlossary && (
-            <div className="bg-white border rounded-lg p-4 mt-2">
-              <div className="flex gap-2 mb-3">
-                <input
-                  type="text"
-                  value={newTerm}
-                  onChange={(e) => setNewTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && addTerm()}
-                  placeholder="Ajouter un terme..."
-                  className="flex-1 border rounded px-3 py-1 text-sm"
-                />
-                <button onClick={addTerm} className="bg-purple-600 text-white px-3 py-1 rounded text-sm">
-                  Ajouter
-                </button>
-              </div>
-              {glossaryTerms.length === 0 ? (
-                <p className="text-gray-400 text-sm">Aucun terme. Ajoutez des mots importants (noms propres, termes techniques).</p>
+        {/* Colonne de gauche (Audios & Upload) */}
+        <div className="md:col-span-2 space-y-6">
+          <UploadZone onUpload={handleUpload} uploading={uploading} uploadProgress={uploadProgress} />
+          
+          <div className="bg-white border border-gray-200 rounded p-4 shadow-sm">
+            <h2 className="font-medium text-gray-900 mb-4 flex items-center justify-between">
+              Fichiers Audio
+              <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">{audios.length}</span>
+            </h2>
+            <div className="space-y-3">
+              {audios.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-4">Aucun fichier pour l'instant.</p>
               ) : (
-                <div className="flex flex-wrap gap-2">
-                  {glossaryTerms.map((term) => (
-                    <span key={term} className="bg-purple-50 text-purple-700 px-2 py-1 rounded text-sm flex items-center gap-1">
-                      {term}
-                      <button onClick={() => removeTerm(term)} className="hover:text-red-500">×</button>
-                    </span>
-                  ))}
+                audios.map((audio) => (
+                  <AudioCard
+                    key={audio.id}
+                    audio={audio}
+                    isActive={activeAudio?.id === audio.id}
+                    onPlay={handlePlay}
+                    onTranscribe={handleTranscribe}
+                    onEdit={handleEdit}
+                    onDownload={handleDownload}
+                    onDelete={handleDeleteAudio}
+                    isTranscribing={audios.some(a => a.status === "transcribing" || a.status === "correcting")}
+                  />
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Section d'édition */}
+          {activeAudio && (
+            <div className="mt-8">
+              <h2 className="text-xl font-medium text-gray-900 mb-4 border-b border-gray-200 pb-2">
+                Édition : {activeAudio.original_filename}
+              </h2>
+              
+              {activeAudio.streamUrl && (
+                <AudioPlayer
+                  url={activeAudio.streamUrl}
+                  onTimeUpdate={handleTimeUpdate}
+                  title="Lecteur Audio"
+                  externalTime={externalTime}
+                />
+              )}
+
+              {transcriptData ? (
+                <div>
+                  <div className="flex gap-2 mb-4">
+                    <button
+                      onClick={loadVersions}
+                      className="text-sm bg-white border border-gray-200 text-gray-700 px-3 py-1.5 rounded hover:bg-gray-50 transition-colors flex items-center gap-2"
+                    >
+                      <History size={14} /> Historique des versions
+                    </button>
+                    <button
+                      onClick={() => setShowDocModal(true)}
+                      className="text-sm bg-gray-800 text-white px-3 py-1.5 rounded hover:bg-gray-700 transition-colors flex items-center gap-2"
+                    >
+                      <FileText size={14} /> Générer document (DOCX)
+                    </button>
+                  </div>
+                  
+                  <TranscriptionPanel
+                    projectId={id}
+                    audioId={activeAudio.id}
+                    transcript={transcriptData}
+                    activeSegmentId={activeSegmentId}
+                    onSegmentClick={(start) => setExternalTime(start)}
+                    onTranscriptUpdate={setTranscriptData}
+                  />
+                </div>
+              ) : (
+                <div className="text-center p-8 border border-dashed border-gray-300 rounded bg-white text-sm text-gray-500">
+                  <p>Aucune transcription disponible ou en cours.</p>
                 </div>
               )}
             </div>
           )}
         </div>
 
-        {audios.length === 0 && !uploading ? (
-          <div className="text-center py-12 text-gray-500">
-            <FileAudio size={48} className="mx-auto mb-4 opacity-50" />
-            <p>Aucun fichier audio pour le moment.</p>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {audios.map((audio) => (
-              <div key={audio.id}>
-                <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <FileAudio size={24} className="text-blue-500" />
-                      <div>
-                        <p className="font-medium">{audio.original_filename}</p>
-                        <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
-                          <span>.{audio.format}</span>
-                          <Clock size={12} /> {new Date(audio.created_at).toLocaleString("fr-FR")}
-                          <span className={`px-2 py-0.5 rounded-full text-xs ${
-                            audio.status === "uploaded" ? "bg-yellow-100 text-yellow-700" :
-                            audio.status === "transcribing" ? "bg-blue-100 text-blue-700" :
-                            audio.status === "transcribed" ? "bg-green-100 text-green-700" :
-                            "bg-gray-100 text-gray-700"
-                          }`}>{audio.status}</span>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* Transcrire */}
-                      {audio.status !== "transcribed" && (
-                        <button onClick={() => handleTranscribe(audio.id)}
-                          disabled={transcribingId === audio.id}
-                          className="p-2 hover:bg-purple-50 rounded" title="Transcrire">
-                          {transcribingId === audio.id
-                            ? <Loader2 size={20} className="text-purple-600 animate-spin" />
-                            : <Mic size={20} className="text-purple-600" />}
-                        </button>
-                      )}
-
-                      {/* Voir / Éditer la transcription */}
-                      {audio.status === "transcribed" && (
-                        <button onClick={() => loadTranscript(audio.id)}
-                          className="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 rounded font-medium text-sm transition-colors flex items-center gap-1.5" title="Ouvrir l'éditeur">
-                          <FileText size={18} />
-                          <span>Éditer transcription</span>
-                        </button>
-                      )}
-
-                      {/* Play */}
-                      <button onClick={() => handlePlay(audio.id)}
-                        disabled={loadingAudioId === audio.id}
-                        className="p-2 hover:bg-gray-100 rounded disabled:opacity-50" title={loadingAudioId === audio.id ? "Conversion/Chargement en cours..." : "Écouter"}>
-                        {loadingAudioId === audio.id ? (
-                          <Loader2 size={20} className="text-blue-600 animate-spin" />
-                        ) : playingId === audio.id ? (
-                          <Pause size={20} className="text-blue-600" />
-                        ) : (
-                          <Play size={20} className="text-blue-600" />
-                        )}
-                      </button>
-
-                      {/* Delete */}
-                      <button onClick={() => handleDelete(audio.id, audio.original_filename)}
-                        className="p-2 hover:bg-red-50 rounded" title="Supprimer">
-                        <Trash2 size={20} className="text-red-500" />
-                      </button>
-                    </div>
-                  </div>
-                  {playingId === audio.id && audioUrl && (
-                    <div className="mt-3">
-                      <audio controls autoPlay className="w-full" src={audioUrl} />
-                    </div>
-                  )}
-                </div>
-
-                {/* ÉDITEUR DOUBLE COLONNE */}
-                {showTranscriptId === audio.id && transcripts[audio.id] && (
-                  <div className="bg-white border border-gray-300 rounded-xl p-6 shadow-md mt-3 space-y-5">
-                    {/* Message de confirmation de sauvegarde */}
-                    {notification && (
-                      <div className="bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-lg p-3 text-sm flex items-center justify-between font-medium">
-                        <span>✅ {notification}</span>
-                        <button onClick={() => setNotification(null)} className="text-emerald-600 hover:text-emerald-900 font-bold">✕</button>
-                      </div>
-                    )}
-
-                    {/* Entête Éditeur */}
-                    <div className="flex justify-between items-center border-b pb-3">
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
-                          <FileText size={20} className="text-blue-600" />
-                          Éditeur de transcription
-                        </h3>
-                        <span className="text-xs px-2.5 py-1 rounded-full font-semibold bg-gray-100 text-gray-700">
-                          {transcripts[audio.id].status}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => openHistoryModal(audio.id)}
-                          className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium text-sm rounded-lg transition-colors border border-gray-300"
-                        >
-                          Historique des versions
-                        </button>
-                        <button
-                          onClick={() => setShowTranscriptId(null)}
-                          className="text-gray-400 hover:text-gray-700 px-2 py-1 text-lg font-bold"
-                          title="Fermer l'éditeur"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Grille 2 Colonnes */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {/* Colonne Gauche : Brute */}
-                      <div className="flex flex-col space-y-3">
-                        <div className="flex justify-between items-center">
-                          <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 bg-amber-400 rounded-full inline-block"></span>
-                            Transcription BRUTE (raw_text)
-                          </label>
-                          <span className="text-xs text-gray-400 font-mono">{editRawText.length} caract.</span>
-                        </div>
-                        <textarea
-                          value={editRawText}
-                          onChange={(e) => setEditRawText(e.target.value)}
-                          rows={14}
-                          className="w-full p-4 border border-gray-300 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 resize-y leading-relaxed font-mono bg-gray-50/50"
-                          placeholder="Transcription brute..."
-                        />
-                        <div className="flex justify-end pt-1">
-                          <button
-                            onClick={() => handleSaveRaw(audio.id)}
-                            disabled={savingRaw}
-                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg shadow transition-colors disabled:opacity-50"
-                          >
-                            {savingRaw ? "Sauvegarde en cours..." : "Sauvegarder la brute"}
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Colonne Droite : Corrigée */}
-                      <div className="flex flex-col space-y-3">
-                        <div className="flex justify-between items-center">
-                          <label className="text-sm font-bold text-gray-700 flex items-center gap-2">
-                            <span className="w-2.5 h-2.5 bg-emerald-500 rounded-full inline-block"></span>
-                            Transcription CORRIGÉE (corrected_text)
-                          </label>
-                          <span className="text-xs text-gray-400 font-mono">{editCorrectedText.length} caract.</span>
-                        </div>
-                        <textarea
-                          value={editCorrectedText}
-                          onChange={(e) => setEditCorrectedText(e.target.value)}
-                          rows={14}
-                          className="w-full p-4 border border-gray-300 rounded-lg text-sm text-gray-800 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-y leading-relaxed bg-emerald-50/20"
-                          placeholder="La version corrigée s'affichera ici après correction IA ou édition manuelle..."
-                        />
-                        <div className="flex justify-between items-center pt-1">
-                          <button
-                            onClick={() => handleCorrectLLM(audio.id)}
-                            disabled={correctingLLM}
-                            className="px-5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium text-sm rounded-lg shadow transition-colors disabled:opacity-50 flex items-center gap-2"
-                          >
-                            {correctingLLM ? (
-                              <>
-                                <Loader2 size={16} className="animate-spin" />
-                                <span>Correction IA en cours...</span>
-                              </>
-                            ) : (
-                              <span>Corriger avec IA</span>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => handleSaveCorrected(audio.id)}
-                            disabled={savingCorrected}
-                            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm rounded-lg shadow transition-colors disabled:opacity-50"
-                          >
-                            {savingCorrected ? "Sauvegarde en cours..." : "Sauvegarder la corrigée"}
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Segments (optionnel) */}
-                    {transcripts[audio.id].segments?.length > 0 && (
-                      <details className="mt-4 border-t pt-3">
-                        <summary className="text-xs font-semibold text-gray-500 cursor-pointer hover:text-gray-700">
-                          Afficher les {transcripts[audio.id].segments.length} segments horodatés (diarisation)
-                        </summary>
-                        <div className="mt-3 space-y-1.5 max-h-48 overflow-y-auto text-xs text-gray-600 font-mono bg-gray-50 p-3 rounded-lg border">
-                          {transcripts[audio.id].segments.map((seg: any, i: number) => (
-                            <div key={i} className="flex gap-3">
-                              <span className="text-gray-400 font-semibold w-16">{seg.start?.toFixed(1)}s</span>
-                              {seg.speaker !== undefined && (
-                                <span className="text-purple-600 font-semibold w-20">Locuteur {seg.speaker}</span>
-                              )}
-                              <span>{seg.text}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </details>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Colonne de droite (Glossaire) */}
+        <div className="md:col-span-1">
+          <GlossaryPanel projectId={id} terms={glossaryTerms} onUpdate={setGlossaryTerms} />
+        </div>
       </main>
 
-      {/* MODALE HISTORIQUE DES VERSIONS */}
+      {/* Modales */}
       {showHistoryModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full p-6 max-h-[85vh] flex flex-col shadow-2xl border border-gray-200">
-            <div className="flex justify-between items-center border-b pb-4 mb-4">
-              <div>
-                <h3 className="text-lg font-bold text-gray-900">Historique des versions</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Toutes les versions sauvegardées et restaurables pour ce fichier audio</p>
-              </div>
+        <VersionHistoryModal
+          projectId={id}
+          audioId={activeAudio.id}
+          versions={versions}
+          versionsLoading={versionsLoading}
+          onClose={() => setShowHistoryModal(false)}
+          onRestore={(newText) => {
+            setTranscriptData({ ...transcriptData, corrected_text: newText });
+            toast.success("Version restaurée");
+            setShowHistoryModal(false);
+          }}
+        />
+      )}
+
+      {showDocModal && (
+        <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded w-full max-w-md shadow-lg border border-gray-200 p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-medium text-gray-900">Générer DOCX</h2>
               <button
-                onClick={() => setShowHistoryModal(false)}
-                className="text-gray-400 hover:text-gray-700 text-lg font-bold px-2 py-1"
+                onClick={() => setShowDocModal(false)}
+                className="text-gray-400 hover:text-gray-700 font-bold px-2 py-1"
               >
                 ✕
               </button>
             </div>
-
-            <div className="flex-1 overflow-y-auto pr-1 space-y-4">
-              {loadingVersions ? (
-                <div className="py-12 text-center text-gray-500 flex flex-col items-center gap-2">
-                  <Loader2 size={24} className="animate-spin text-purple-600" />
-                  <p className="text-sm">Chargement de l'historique des versions...</p>
-                </div>
-              ) : versions.length === 0 ? (
-                <div className="py-12 text-center text-gray-400">
-                  <p>Aucune version disponible dans l'historique.</p>
-                </div>
-              ) : (
-                versions.map((ver) => (
-                  <div
-                    key={ver.id}
-                    className="border border-gray-200 rounded-lg p-4 bg-gray-50 hover:bg-white hover:border-gray-300 transition-colors shadow-sm space-y-3"
-                  >
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-3">
-                        <span className="font-bold text-sm bg-purple-100 text-purple-800 px-3 py-1 rounded-full">
-                          Version {ver.version_number}
-                        </span>
-                        <span className="text-xs font-semibold uppercase px-2.5 py-0.5 rounded bg-gray-200 text-gray-700">
-                          {ver.source}
-                        </span>
-                        {ver.created_at && (
-                          <span className="text-xs text-gray-400">
-                            {new Date(ver.created_at).toLocaleString("fr-FR")}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        onClick={() => handleRestoreVersion(ver.id)}
-                        disabled={restoringVersionId === ver.id}
-                        className="px-4 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs rounded-lg transition-colors shadow-sm disabled:opacity-50"
-                      >
-                        {restoringVersionId === ver.id ? "Restauration..." : "Restaurer cette version"}
-                      </button>
-                    </div>
-                    <div className="bg-white border rounded p-3 text-xs text-gray-700 leading-relaxed max-h-36 overflow-y-auto whitespace-pre-wrap font-mono">
-                      {ver.content}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="border-t pt-4 mt-4 flex justify-end">
-              <button
-                onClick={() => setShowHistoryModal(false)}
-                className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium text-sm rounded-lg transition-colors"
-              >
-                Fermer
-              </button>
-            </div>
+            
+            <form onSubmit={handleGenerateDoc} className="space-y-4">
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Expéditeur</label>
+                <input
+                  type="text" required value={docForm.expediteur}
+                  onChange={(e) => setDocForm({...docForm, expediteur: e.target.value})}
+                  className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Destinataire</label>
+                <input
+                  type="text" required value={docForm.destinataire}
+                  onChange={(e) => setDocForm({...docForm, destinataire: e.target.value})}
+                  className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-700 mb-1">Objet</label>
+                <input
+                  type="text" required value={docForm.objet}
+                  onChange={(e) => setDocForm({...docForm, objet: e.target.value})}
+                  className="w-full border border-gray-300 rounded p-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-400 bg-white"
+                />
+              </div>
+              
+              <div className="border-t border-gray-100 pt-4 mt-4 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDocModal(false)}
+                  className="px-3 py-1.5 bg-transparent border border-gray-300 hover:bg-gray-100 text-gray-700 text-sm rounded transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={docGenerating}
+                  className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-white text-sm rounded transition-colors flex items-center gap-2 disabled:opacity-50"
+                >
+                  {docGenerating ? <Loader2 size={14} className="animate-spin" /> : null}
+                  Télécharger
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
