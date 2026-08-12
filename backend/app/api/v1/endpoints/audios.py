@@ -3,7 +3,7 @@
 # import des modules externes
 import uuid
 import io
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status, Query, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -284,6 +284,7 @@ async def delete_audio(
     request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -308,6 +309,12 @@ async def delete_audio(
     audio = result.scalar_one_or_none()
     if not audio:
         raise HTTPException(status_code=404, detail="Fichier non trouvé")
+
+    # Supprime les fichiers sur S3 en arrière-plan
+    if audio.storage_path_raw:
+        background_tasks.add_task(delete_file_from_s3, settings.S3_BUCKET_RAW_AUDIO, audio.storage_path_raw)
+    if audio.storage_path_converted:
+        background_tasks.add_task(delete_file_from_s3, settings.S3_BUCKET_PROCESSED_AUDIO, audio.storage_path_converted)
 
     # Supprime de la base de données (cascade sur les transcriptions)
     await db.delete(audio)

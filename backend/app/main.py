@@ -50,7 +50,13 @@ async def security_and_logging_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -74,3 +80,24 @@ async def health():
 @app.get("/api/v1/hello")
 async def hello():
     return {"message": "Transcribo backend is running!"}
+
+from app.infrastructure.storage.s3 import s3_client
+from app.core.config import get_settings
+
+@app.on_event("startup")
+def create_buckets_on_startup():
+    settings = get_settings()
+    buckets = [
+        settings.S3_BUCKET_RAW_AUDIO,
+        settings.S3_BUCKET_PROCESSED_AUDIO,
+        settings.S3_BUCKET_DOCUMENTS,
+    ]
+    for bucket in buckets:
+        try:
+            s3_client.head_bucket(Bucket=bucket)
+        except Exception:
+            try:
+                s3_client.create_bucket(Bucket=bucket)
+                print(f"Bucket '{bucket}' created successfully.")
+            except Exception as e:
+                print(f"Error creating bucket '{bucket}': {e}")

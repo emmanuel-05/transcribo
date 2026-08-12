@@ -90,3 +90,4 @@ watchfiles==1.2.0
 websockets==16.1.1
 slowapi==0.1.10
 python-magic==0.4.27
+docxtpl==0.17.0

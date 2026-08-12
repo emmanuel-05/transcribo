@@ -1,14 +1,22 @@
+"use client";
+
 import React, { useRef, useState, useEffect } from "react";
 import { Play, Pause } from "lucide-react";
+import { formatSecondsToTime } from "@/utils/formatters";
 
-interface AudioPlayerProps {
+export interface AudioPlayerProps {
   url: string;
   onTimeUpdate?: (currentTime: number) => void;
   title?: string;
   externalTime?: number;
 }
 
-export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: AudioPlayerProps) {
+export function AudioPlayer({
+  url,
+  onTimeUpdate,
+  title,
+  externalTime,
+}: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -16,7 +24,7 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
   const [duration, setDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
 
-  // Sync with external time clicks
+  // Synchronisation avec les clics sur les segments de transcription
   useEffect(() => {
     if (externalTime !== undefined && audioRef.current) {
       audioRef.current.currentTime = externalTime;
@@ -24,13 +32,6 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
       setIsPlaying(true);
     }
   }, [externalTime]);
-
-  const formatTime = (time: number) => {
-    if (isNaN(time)) return "0:00";
-    const min = Math.floor(time / 60);
-    const sec = Math.floor(time % 60);
-    return `${min}:${sec.toString().padStart(2, "0")}`;
-  };
 
   const togglePlay = () => {
     if (audioRef.current) {
@@ -71,14 +72,6 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
     }
   };
 
-  const handleSpeedChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newRate = parseFloat(e.target.value);
-    setPlaybackRate(newRate);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = newRate;
-    }
-  };
-
   const handleEnded = () => {
     setIsPlaying(false);
     setProgress(0);
@@ -91,7 +84,7 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
   }, [url]);
 
   return (
-    <div className="bg-white border border-gray-200 rounded p-4 mb-6 shadow-sm">
+    <div className="bg-white/95 backdrop-blur-md border border-gray-200/80 rounded-2xl p-4 mb-6 shadow-sm">
       <audio
         ref={audioRef}
         src={url}
@@ -101,9 +94,9 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
       />
-      
-      {title && <p className="text-sm font-medium text-gray-800 mb-2">{title}</p>}
-      
+
+      {title && <p className="text-xs sm:text-sm font-semibold text-gray-900 mb-2 truncate">{title}</p>}
+
       <div className="mb-3">
         <input
           type="range"
@@ -112,32 +105,35 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
           step="0.1"
           value={progress}
           onChange={handleSeek}
-          className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
+          className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none"
           title="Avancer / Reculer"
         />
       </div>
 
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
           <button
+            type="button"
             onClick={togglePlay}
-            className="text-gray-600 hover:text-gray-900 transition-colors focus:outline-none"
+            className="w-8 h-8 rounded-full bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 transition-colors flex items-center justify-center shadow-xs focus:outline-none"
             title={isPlaying ? "Pause" : "Play"}
           >
-            {isPlaying ? <Pause size={20} /> : <Play size={20} />}
+            {isPlaying ? <Pause size={15} /> : <Play size={15} className="ml-0.5" />}
           </button>
           <div className="text-xs text-gray-500 font-mono tracking-wider">
-            {formatTime(currentTime)} / {formatTime(duration)}
+            {formatSecondsToTime(currentTime)} / {formatSecondsToTime(duration)}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="speed-range" className="text-xs text-gray-500 hidden sm:block">Vitesse :</label>
+          <label htmlFor="speed-range" className="text-xs text-gray-500 hidden sm:inline">
+            Vitesse :
+          </label>
           <input
             id="speed-range"
             type="range"
-            min="0.4"
-            max="3"
+            min="0.5"
+            max="2.5"
             step="0.1"
             value={playbackRate}
             onChange={(e) => {
@@ -145,10 +141,12 @@ export default function AudioPlayer({ url, onTimeUpdate, title, externalTime }: 
               setPlaybackRate(newRate);
               if (audioRef.current) audioRef.current.playbackRate = newRate;
             }}
-            className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
+            className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none"
             title="Vitesse de lecture"
           />
-          <span className="text-xs text-gray-700 font-medium min-w-[2.5rem] text-right">{playbackRate.toFixed(1)}x</span>
+          <span className="text-xs text-gray-700 font-mono font-medium min-w-[2.5rem] text-right">
+            {playbackRate.toFixed(1)}x
+          </span>
         </div>
       </div>
     </div>
