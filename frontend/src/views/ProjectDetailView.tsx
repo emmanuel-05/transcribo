@@ -39,6 +39,7 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
     uploadProgress,
     activeAudio,
     isTranscribingAll,
+    selectedAudios,
     showHistoryModal,
     setShowHistoryModal,
     versions,
@@ -47,6 +48,7 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
     setShowDocModal,
     docGenerating,
     transcriptData,
+    isCorrecting,
     activeSegmentId,
     setActiveSegmentId,
     externalTime,
@@ -56,11 +58,20 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
     totalPages,
     setCurrentPage,
     handleUpload,
+    handleToggleSelectAudio,
+    handleSelectAllAudios,
+    handleClearSelection,
     handleTranscribe,
     handleTranscribeAll,
+    handleTranscribeSelected,
     handleDeleteAudio,
+    handleDeleteSelectedAudios,
+    handleDeleteAllAudios,
     handleSelectAudio,
     handleSaveTranscript,
+    handleValidateRawTranscript,
+    handleCorrectTranscript,
+    handleCloseTranscript,
     handleOpenHistory,
     handleRestoreVersion,
     handleGenerateDoc,
@@ -78,8 +89,18 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
     );
   }
 
-  const audioStreamUrl = playingAudio
-    ? `http://localhost:8000/api/v1/projects/${projectId}/audios/${playingAudio.id}/stream`
+  const apiHost =
+    typeof window !== "undefined"
+      ? `http://${window.location.hostname}:8000/api/v1`
+      : "http://localhost:8000/api/v1";
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || apiHost;
+
+  const activeAudioStreamUrl = activeAudio
+    ? `${baseUrl}/projects/${projectId}/audios/${activeAudio.id}/stream`
+    : "";
+
+  const standaloneStreamUrl = playingAudio
+    ? `${baseUrl}/projects/${projectId}/audios/${playingAudio.id}/stream`
     : "";
 
   return (
@@ -105,45 +126,10 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
         }
       />
 
-      <main className="flex-1 py-6">
+      <main className={`flex-1 py-6 ${playingAudio && !activeAudio ? "pb-32" : "pb-12"}`}>
         <PageContainer maxWidth="7xl">
-          {/* Lecteur Audio flottant en haut si un audio est sélectionné */}
-          {playingAudio && (
-            <AudioPlayer
-              url={audioStreamUrl}
-              title={playingAudio.original_filename}
-              externalTime={externalTime}
-              onTimeUpdate={(t) => {
-                if (transcriptData?.raw_json?.segments) {
-                  const seg = transcriptData.raw_json.segments.find(
-                    (s) => t >= s.start && t <= s.end
-                  );
-                  if (seg) setActiveSegmentId(seg.id);
-                }
-              }}
-            />
-          )}
-
-          {/* Éditeur de transcription si actif */}
-          {activeAudio && transcriptData && (
-            <TranscriptionPanel
-              transcript={transcriptData}
-              audioFilename={activeAudio.original_filename}
-              activeSegmentId={activeSegmentId}
-              onSegmentClick={(start) => {
-                if (!playingAudio || playingAudio.id !== activeAudio.id) {
-                  setPlayingAudio(activeAudio);
-                }
-                setExternalTime(start);
-              }}
-              onSaveTranscript={handleSaveTranscript}
-              onShowHistory={handleOpenHistory}
-              onGenerateDoc={() => setShowDocModal(true)}
-            />
-          )}
-
-          {/* Grille principale : Upload + Audios (Gauche) / Glossaire (Droite) */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+          {/* 1. GRILLE PRINCIPALE FIXE AU SOMMET : Upload + Audios (Gauche) / Glossaire (Droite) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start mb-8">
             {/* Colonne gauche (2/3) : Upload + Liste audio */}
             <div className="lg:col-span-2 space-y-6">
               <UploadZone
@@ -156,14 +142,28 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
                 audios={audios}
                 allAudiosCount={allAudios.length}
                 activeAudio={activeAudio}
+                playingAudioId={activeAudio?.id || playingAudio?.id}
+                selectedAudios={selectedAudios}
+                onToggleSelectAudio={handleToggleSelectAudio}
+                onSelectAllAudios={handleSelectAllAudios}
+                onClearSelection={handleClearSelection}
                 onPlayAudio={(audio) => {
-                  setPlayingAudio(audio);
-                  handleSelectAudio(audio);
+                  if (activeAudio?.id === audio.id) {
+                    // Si cet audio est déjà ouvert dans la section édition
+                  } else {
+                    setPlayingAudio(audio);
+                  }
                 }}
                 onTranscribeAudio={handleTranscribe}
-                onEditTranscript={handleSelectAudio}
-                onDeleteAudio={handleDeleteAudio}
+                onTranscribeSelected={handleTranscribeSelected}
                 onTranscribeAll={handleTranscribeAll}
+                onEditTranscript={(audio) => {
+                  setPlayingAudio(null);
+                  handleSelectAudio(audio);
+                }}
+                onDeleteAudio={handleDeleteAudio}
+                onDeleteSelected={handleDeleteSelectedAudios}
+                onDeleteAll={handleDeleteAllAudios}
                 isTranscribingAll={isTranscribingAll}
                 currentPage={currentPage}
                 pageSize={pageSize}
@@ -180,25 +180,72 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
               />
             </div>
           </div>
+
+          {/* 2. SECTION ÉDITION UNIFIÉE ET REPLIABLE : POSITIONNÉE STRICTEMENT SOUS LA GRILLE */}
+          {activeAudio && transcriptData && (
+            <div className="animate-in fade-in slide-in-from-top-2 duration-300">
+              <TranscriptionPanel
+                transcript={transcriptData}
+                audioFilename={activeAudio.original_filename}
+                audioStreamUrl={activeAudioStreamUrl}
+                externalTime={externalTime}
+                activeSegmentId={activeSegmentId}
+                glossaryTerms={glossaryTerms}
+                isCorrecting={isCorrecting}
+                onTimeUpdate={(t) => {
+                  if (transcriptData?.raw_json?.segments) {
+                    const seg = transcriptData.raw_json.segments.find(
+                      (s) => t >= s.start && t <= s.end
+                    );
+                    if (seg && seg.id !== activeSegmentId) {
+                      setActiveSegmentId(seg.id);
+                    }
+                  }
+                }}
+                onSegmentClick={(start) => {
+                  setExternalTime(start);
+                }}
+                onValidateRaw={handleValidateRawTranscript}
+                onSaveTranscript={handleSaveTranscript}
+                onCorrectTranscript={handleCorrectTranscript}
+                onShowHistory={handleOpenHistory}
+                onGenerateDoc={() => setShowDocModal(true)}
+                onClose={handleCloseTranscript}
+              />
+            </div>
+          )}
         </PageContainer>
       </main>
 
-      {/* Modale d'historique des versions */}
-      <VersionHistoryModal
-        isOpen={showHistoryModal}
-        onClose={() => setShowHistoryModal(false)}
-        versions={versions}
-        isLoading={versionsLoading}
-        onRestore={handleRestoreVersion}
-      />
+      {/* 3. Lecteur Audio d'appoint (uniquement si écoute rapide d'un audio hors session d'édition) */}
+      {playingAudio && !activeAudio && (
+        <AudioPlayer
+          url={standaloneStreamUrl}
+          title={playingAudio.original_filename}
+          externalTime={externalTime}
+          onClose={() => setPlayingAudio(null)}
+        />
+      )}
 
-      {/* Modale de génération de document */}
-      <DocumentExportModal
-        isOpen={showDocModal}
-        onClose={() => setShowDocModal(false)}
-        onSubmit={handleGenerateDoc}
-        isLoading={docGenerating}
-      />
+      {/* Modales chargées dynamiquement */}
+      {showHistoryModal && (
+        <VersionHistoryModal
+          isOpen={showHistoryModal}
+          onClose={() => setShowHistoryModal(false)}
+          versions={versions}
+          isLoading={versionsLoading}
+          onRestore={handleRestoreVersion}
+        />
+      )}
+
+      {showDocModal && (
+        <DocumentExportModal
+          isOpen={showDocModal}
+          onClose={() => setShowDocModal(false)}
+          onSubmit={handleGenerateDoc}
+          isLoading={docGenerating}
+        />
+      )}
     </div>
   );
 }

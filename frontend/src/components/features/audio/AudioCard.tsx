@@ -8,6 +8,7 @@ import { formatDate } from "@/utils/formatters";
 export interface AudioCardProps {
   audio: AudioFile;
   isActive: boolean;
+  isPlaying?: boolean;
   onPlay: (audio: AudioFile) => void;
   onTranscribe: (id: string) => void;
   onEdit: (audio: AudioFile) => void;
@@ -20,6 +21,7 @@ export interface AudioCardProps {
 export function AudioCard({
   audio,
   isActive,
+  isPlaying = false,
   onPlay,
   onTranscribe,
   onEdit,
@@ -118,7 +120,11 @@ export function AudioCard({
           <button
             type="button"
             onClick={() => onEdit(audio)}
-            className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-900 transition-colors"
+            className={`p-1.5 rounded-lg transition-colors ${
+              isActive
+                ? "bg-blue-50 text-blue-700 font-semibold ring-1 ring-blue-300"
+                : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
+            }`}
             title="Ouvrir la transcription"
           >
             <Edit3 size={15} />
@@ -129,11 +135,11 @@ export function AudioCard({
           type="button"
           onClick={() => onPlay(audio)}
           className={`p-1.5 rounded-lg transition-colors ${
-            isActive
-              ? "bg-blue-600 text-white"
+            isPlaying
+              ? "bg-blue-600 text-white shadow-xs"
               : "text-gray-500 hover:bg-gray-100 hover:text-gray-900"
           }`}
-          title="Écouter l'audio"
+          title={isPlaying ? "En cours de lecture" : "Écouter l'audio"}
         >
           <Play size={15} />
         </button>

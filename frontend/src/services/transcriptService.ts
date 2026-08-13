@@ -35,6 +35,34 @@ export const transcriptService = {
   },
 
   /**
+   * Valide la transcription brute.
+   */
+  async validateRawTranscript(
+    projectId: string,
+    audioId: string,
+    rawText: string
+  ): Promise<TranscriptData> {
+    const response = await api.put<TranscriptData>(
+      `/projects/${projectId}/audios/${audioId}/transcript/validate`,
+      { raw_text: rawText }
+    );
+    return response.data;
+  },
+
+  /**
+   * Lance la correction automatique par le LLM (s'appuyant sur le texte validé et le glossaire).
+   */
+  async correctTranscript(
+    projectId: string,
+    audioId: string
+  ): Promise<TranscriptData> {
+    const response = await api.post<TranscriptData>(
+      `/projects/${projectId}/audios/${audioId}/correct`
+    );
+    return response.data;
+  },
+
+  /**
    * Récupère l'historique des versions pour une transcription.
    */
   async getVersions(projectId: string, audioId: string): Promise<TranscriptVersion[]> {

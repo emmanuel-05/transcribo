@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useRef, useState, useEffect } from "react";
-import { Play, Pause } from "lucide-react";
+import { Play, Pause, X, RotateCcw, FastForward } from "lucide-react";
 import { formatSecondsToTime } from "@/utils/formatters";
 
 export interface AudioPlayerProps {
@@ -9,6 +9,7 @@ export interface AudioPlayerProps {
   onTimeUpdate?: (currentTime: number) => void;
   title?: string;
   externalTime?: number;
+  onClose?: () => void;
 }
 
 export function AudioPlayer({
@@ -16,6 +17,7 @@ export function AudioPlayer({
   onTimeUpdate,
   title,
   externalTime,
+  onClose,
 }: AudioPlayerProps) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -72,6 +74,17 @@ export function AudioPlayer({
     }
   };
 
+  const handleSkip = (seconds: number) => {
+    if (audioRef.current) {
+      const newTime = Math.max(0, Math.min(duration, audioRef.current.currentTime + seconds));
+      audioRef.current.currentTime = newTime;
+      setCurrentTime(newTime);
+      if (duration > 0) {
+        setProgress((newTime / duration) * 100);
+      }
+    }
+  };
+
   const handleEnded = () => {
     setIsPlaying(false);
     setProgress(0);
@@ -84,7 +97,7 @@ export function AudioPlayer({
   }, [url]);
 
   return (
-    <div className="bg-white/95 backdrop-blur-md border border-gray-200/80 rounded-2xl p-4 mb-6 shadow-sm">
+    <div className="fixed bottom-4 left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-4xl z-50 bg-white/95 backdrop-blur-md text-gray-900 border border-gray-200 rounded-2xl p-3.5 sm:p-4 shadow-xl animate-in fade-in slide-in-from-bottom-3 duration-200">
       <audio
         ref={audioRef}
         src={url}
@@ -95,9 +108,30 @@ export function AudioPlayer({
         onPause={() => setIsPlaying(false)}
       />
 
-      {title && <p className="text-xs sm:text-sm font-semibold text-gray-900 mb-2 truncate">{title}</p>}
+      <div className="flex items-center justify-between mb-2 gap-3">
+        <p className="text-xs sm:text-sm font-semibold text-gray-900 truncate max-w-md">
+          {title || "Lecture audio"}
+        </p>
 
-      <div className="mb-3">
+        <div className="flex items-center gap-3">
+          <div className="text-xs font-mono text-gray-500 tracking-wider">
+            {formatSecondsToTime(currentTime)} / {formatSecondsToTime(duration)}
+          </div>
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              title="Fermer le lecteur"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="mb-2.5">
         <input
           type="range"
           min="0"
@@ -106,31 +140,45 @@ export function AudioPlayer({
           value={progress}
           onChange={handleSeek}
           className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none"
-          title="Avancer / Reculer"
+          title="Positionner la lecture"
         />
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() => handleSkip(-5)}
+            className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors text-xs flex items-center gap-0.5"
+            title="Reculer de 5 secondes"
+          >
+            <RotateCcw size={13} />
+            <span className="text-[10px]">-5s</span>
+          </button>
+
           <button
             type="button"
             onClick={togglePlay}
-            className="w-8 h-8 rounded-full bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 transition-colors flex items-center justify-center shadow-xs focus:outline-none"
+            className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white flex items-center justify-center transition-transform hover:scale-105 shadow-xs focus:outline-none"
             title={isPlaying ? "Pause" : "Play"}
           >
             {isPlaying ? <Pause size={15} /> : <Play size={15} className="ml-0.5" />}
           </button>
-          <div className="text-xs text-gray-500 font-mono tracking-wider">
-            {formatSecondsToTime(currentTime)} / {formatSecondsToTime(duration)}
-          </div>
+
+          <button
+            type="button"
+            onClick={() => handleSkip(5)}
+            className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors text-xs flex items-center gap-0.5"
+            title="Avancer de 5 secondes"
+          >
+            <FastForward size={13} />
+            <span className="text-[10px]">+5s</span>
+          </button>
         </div>
 
         <div className="flex items-center gap-2">
-          <label htmlFor="speed-range" className="text-xs text-gray-500 hidden sm:inline">
-            Vitesse :
-          </label>
+          <span className="text-xs text-gray-500 hidden sm:inline">Vitesse :</span>
           <input
-            id="speed-range"
             type="range"
             min="0.5"
             max="2.5"
@@ -141,10 +189,10 @@ export function AudioPlayer({
               setPlaybackRate(newRate);
               if (audioRef.current) audioRef.current.playbackRate = newRate;
             }}
-            className="w-20 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none"
+            className="w-16 sm:w-24 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none"
             title="Vitesse de lecture"
           />
-          <span className="text-xs text-gray-700 font-mono font-medium min-w-[2.5rem] text-right">
+          <span className="text-xs text-gray-700 font-mono font-medium min-w-[2.2rem] text-right">
             {playbackRate.toFixed(1)}x
           </span>
         </div>

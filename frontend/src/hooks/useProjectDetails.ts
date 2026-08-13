@@ -133,6 +133,26 @@ export function useProjectDetails(projectId: string, isAuthenticated: boolean) {
     loadAudios();
   };
 
+  // Gestion de la sélection multiple
+  const handleToggleSelectAudio = (id: string, checked: boolean) => {
+    setSelectedAudios((prev) =>
+      checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((item) => item !== id)
+    );
+  };
+
+  const handleSelectAllAudios = (checked: boolean) => {
+    if (checked) {
+      setSelectedAudios(audios.map((a) => a.id));
+    } else {
+      setSelectedAudios([]);
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedAudios([]);
+  };
+
+  // Transcription unitaire
   const handleTranscribe = async (audioId: string) => {
     try {
       await audioService.transcribeAudio(projectId, audioId);
@@ -143,34 +163,62 @@ export function useProjectDetails(projectId: string, isAuthenticated: boolean) {
     }
   };
 
+  // Transcription de TOUS les fichiers (sauf ceux déjà transcrits)
   const handleTranscribeAll = async () => {
     const toTranscribe = audios.filter((a) => ["uploaded", "error"].includes(a.status));
-    if (toTranscribe.length === 0) return;
+    if (toTranscribe.length === 0) {
+      toast("Tous les fichiers audio sont déjà transcrits ou en cours.", { icon: "ℹ️" });
+      return;
+    }
 
     setIsTranscribingAll(true);
-    let launched = 0;
-
-    for (const audio of toTranscribe) {
-      try {
-        await audioService.transcribeAudio(projectId, audio.id);
-        launched++;
-      } catch (err) {
-        console.error(`Erreur transcription ${audio.id}`, err);
-      }
-    }
-
-    if (launched > 0) {
-      toast.success(`${launched} transcription(s) lancée(s) !`);
+    try {
+      const res = await audioService.transcribeAllAudios(projectId);
+      toast.success(`${res.launched_count} transcription(s) lancée(s) !`);
       loadAudios();
+    } catch {
+      toast.error("Erreur lors du lancement de la transcription globale");
+    } finally {
+      setIsTranscribingAll(false);
     }
-    setIsTranscribingAll(false);
   };
 
+  // Transcription d'une sélection de fichiers (sauf ceux déjà transcrits)
+  const handleTranscribeSelected = async () => {
+    if (selectedAudios.length === 0) return;
+
+    const toTranscribe = audios.filter(
+      (a) => selectedAudios.includes(a.id) && ["uploaded", "error"].includes(a.status)
+    );
+
+    if (toTranscribe.length === 0) {
+      toast("Les fichiers sélectionnés sont déjà transcrits ou en cours.", { icon: "ℹ️" });
+      return;
+    }
+
+    setIsTranscribingAll(true);
+    try {
+      const res = await audioService.transcribeMultipleAudios(
+        projectId,
+        toTranscribe.map((a) => a.id)
+      );
+      toast.success(`${res.launched_count} transcription(s) lancée(s) sur la sélection !`);
+      setSelectedAudios([]);
+      loadAudios();
+    } catch {
+      toast.error("Erreur lors de la transcription de la sélection");
+    } finally {
+      setIsTranscribingAll(false);
+    }
+  };
+
+  // Suppression unitaire
   const handleDeleteAudio = async (audioId: string, filename: string) => {
     if (confirm(`Supprimer l'audio "${filename}" ?`)) {
       try {
         await audioService.deleteAudio(projectId, audioId);
         toast.success("Audio supprimé");
+        setSelectedAudios((prev) => prev.filter((id) => id !== audioId));
         if (activeAudio?.id === audioId) {
           setActiveAudio(null);
           setTranscriptData(null);
@@ -181,6 +229,57 @@ export function useProjectDetails(projectId: string, isAuthenticated: boolean) {
       }
     }
   };
+
+  // Suppression d'une sélection de fichiers
+  const handleDeleteSelectedAudios = async () => {
+    if (selectedAudios.length === 0) return;
+
+    if (
+      confirm(
+        `Êtes-vous sûr de vouloir supprimer les ${selectedAudios.length} fichier(s) audio sélectionné(s) ? Cette action est irréversible.`
+      )
+    ) {
+      try {
+        const res = await audioService.deleteMultipleAudios(projectId, selectedAudios);
+        toast.success(`${res.deleted_count} fichier(s) supprimé(s) avec succès !`);
+        if (activeAudio && selectedAudios.includes(activeAudio.id)) {
+          setActiveAudio(null);
+          setTranscriptData(null);
+        }
+        setSelectedAudios([]);
+        loadAudios();
+      } catch {
+        toast.error("Erreur lors de la suppression de la sélection");
+      }
+    }
+  };
+
+  // Suppression de TOUS les fichiers du projet
+  const handleDeleteAllAudios = async () => {
+    if (audios.length === 0) {
+      toast("Aucun fichier audio à supprimer.", { icon: "ℹ️" });
+      return;
+    }
+
+    if (
+      confirm(
+        `⚠️ ATTENTION : Voulez-vous vraiment supprimer TOUS les fichiers audio (${audios.length}) de ce projet ? Cette action est irréversible.`
+      )
+    ) {
+      try {
+        const res = await audioService.deleteAllAudios(projectId);
+        toast.success(`${res.deleted_count} fichier(s) audio supprimé(s) !`);
+        setActiveAudio(null);
+        setTranscriptData(null);
+        setSelectedAudios([]);
+        loadAudios();
+      } catch {
+        toast.error("Erreur lors de la suppression de tous les fichiers");
+      }
+    }
+  };
+
+  const [isCorrecting, setIsCorrecting] = useState(false);
 
   const handleSelectAudio = (audio: AudioFile) => {
     setActiveAudio(audio);
@@ -198,9 +297,50 @@ export function useProjectDetails(projectId: string, isAuthenticated: boolean) {
       );
       setTranscriptData(updated);
       toast.success("Transcription enregistrée");
+      loadAudios();
     } catch {
       toast.error("Erreur lors de l'enregistrement");
     }
+  };
+
+  const handleValidateRawTranscript = async (rawText: string) => {
+    if (!activeAudio) return;
+    try {
+      const updated = await transcriptService.validateRawTranscript(
+        projectId,
+        activeAudio.id,
+        rawText
+      );
+      setTranscriptData(updated);
+      toast.success("Transcription brute validée avec succès !");
+      loadAudios();
+    } catch {
+      toast.error("Erreur lors de la validation de la transcription");
+    }
+  };
+
+  const handleCorrectTranscript = async () => {
+    if (!activeAudio) return;
+    setIsCorrecting(true);
+    try {
+      const updated = await transcriptService.correctTranscript(
+        projectId,
+        activeAudio.id
+      );
+      setTranscriptData(updated);
+      toast.success("Correction IA terminée avec succès !");
+      loadAudios();
+    } catch {
+      toast.error("Erreur lors de la correction par l'IA");
+    } finally {
+      setIsCorrecting(false);
+    }
+  };
+
+  const handleCloseTranscript = () => {
+    setActiveAudio(null);
+    setTranscriptData(null);
+    setActiveSegmentId(null);
   };
 
   const handleOpenHistory = async () => {
@@ -292,6 +432,7 @@ export function useProjectDetails(projectId: string, isAuthenticated: boolean) {
     showDrawer,
     setShowDrawer,
     transcriptData,
+    isCorrecting,
     activeSegmentId,
     setActiveSegmentId,
     externalTime,
@@ -302,11 +443,20 @@ export function useProjectDetails(projectId: string, isAuthenticated: boolean) {
     setPageSize,
     totalPages,
     handleUpload,
+    handleToggleSelectAudio,
+    handleSelectAllAudios,
+    handleClearSelection,
     handleTranscribe,
     handleTranscribeAll,
+    handleTranscribeSelected,
     handleDeleteAudio,
+    handleDeleteSelectedAudios,
+    handleDeleteAllAudios,
     handleSelectAudio,
     handleSaveTranscript,
+    handleValidateRawTranscript,
+    handleCorrectTranscript,
+    handleCloseTranscript,
     handleOpenHistory,
     handleRestoreVersion,
     handleGenerateDoc,

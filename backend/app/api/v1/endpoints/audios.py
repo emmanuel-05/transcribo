@@ -21,6 +21,7 @@ from app.infrastructure.db.models.project import Project
 from app.infrastructure.db.models.audio_file import AudioFile, AudioStatus
 from app.infrastructure.db.models.user import User
 from app.infrastructure.db.models.transcript import Transcript
+from app.infrastructure.db.models.glossary import Glossary
 from app.infrastructure.storage.s3 import upload_file_to_s3
 from app.infrastructure.storage.s3 import generate_presigned_url, s3_client
 from app.infrastructure.storage.s3 import delete_file_from_s3
@@ -320,8 +321,96 @@ async def delete_audio(
     await db.delete(audio)
     return None
 
+
+class BatchAudioIdsRequest(BaseModel):
+    audio_ids: list[uuid.UUID]
+
+
+@router.delete("/{project_id}/audios/all", status_code=status.HTTP_200_OK)
+@limiter.limit("60/minute")
+async def delete_all_audios(
+    request: Request,
+    project_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Supprime TOUS les fichiers audio d'un projet et leurs fichiers S3."""
+    # Vérifie le projet
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    # Récupère tous les audios du projet
+    audios_res = await db.execute(
+        select(AudioFile).where(AudioFile.project_id == project_id)
+    )
+    audios = audios_res.scalars().all()
+    count = len(audios)
+
+    for audio in audios:
+        if audio.storage_path_raw:
+            background_tasks.add_task(delete_file_from_s3, settings.S3_BUCKET_RAW_AUDIO, audio.storage_path_raw)
+        if audio.storage_path_converted:
+            background_tasks.add_task(delete_file_from_s3, settings.S3_BUCKET_PROCESSED_AUDIO, audio.storage_path_converted)
+        await db.delete(audio)
+
+    await db.commit()
+    return {"message": f"{count} fichier(s) audio supprimé(s)", "deleted_count": count}
+
+
+@router.post("/{project_id}/audios/batch-delete", status_code=status.HTTP_200_OK)
+@limiter.limit("60/minute")
+async def batch_delete_audios(
+    request: Request,
+    project_id: uuid.UUID,
+    data: BatchAudioIdsRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Supprime une sélection de fichiers audio d'un projet."""
+    if not data.audio_ids:
+        return {"message": "Aucun fichier spécifié", "deleted_count": 0}
+
+    # Vérifie le projet
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    # Récupère les audios demandés
+    audios_res = await db.execute(
+        select(AudioFile).where(
+            AudioFile.project_id == project_id,
+            AudioFile.id.in_(data.audio_ids),
+        )
+    )
+    audios = audios_res.scalars().all()
+    count = len(audios)
+
+    for audio in audios:
+        if audio.storage_path_raw:
+            background_tasks.add_task(delete_file_from_s3, settings.S3_BUCKET_RAW_AUDIO, audio.storage_path_raw)
+        if audio.storage_path_converted:
+            background_tasks.add_task(delete_file_from_s3, settings.S3_BUCKET_PROCESSED_AUDIO, audio.storage_path_converted)
+        await db.delete(audio)
+
+    await db.commit()
+    return {"message": f"{count} fichier(s) audio supprimé(s)", "deleted_count": count}
+
+
 @router.post("/{project_id}/audios/{audio_id}/transcribe", status_code=202)
-@limiter.limit("30/minute") # Transcription should be slightly more limited
+@limiter.limit("30/minute")
 async def start_transcription(
     request: Request,
     project_id: uuid.UUID,
@@ -330,7 +419,6 @@ async def start_transcription(
     current_user: User = Depends(get_current_user),
 ):
     """Lance la transcription asynchrone d'un fichier audio."""
-    # Vérifications...
     result = await db.execute(
         select(AudioFile).where(
             AudioFile.id == audio_id,
@@ -344,13 +432,107 @@ async def start_transcription(
     if audio.status == AudioStatus.TRANSCRIBING:
         raise HTTPException(status_code=400, detail="Transcription déjà en cours")
 
-    # Lance la transcription en arrière-plan
     import asyncio as asyncio_module
     from app.workers.transcription_worker import process_audio
     
     asyncio_module.create_task(process_audio(audio.id))
-
     return {"message": "Transcription lancée", "audio_id": str(audio_id)}
+
+
+@router.post("/{project_id}/audios/transcribe-all", status_code=status.HTTP_200_OK)
+@limiter.limit("30/minute")
+async def transcribe_all_audios(
+    request: Request,
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lance la transcription de TOUS les fichiers non encore transcrits du projet."""
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    # Récupère tous les audios non encore transcrits et non en cours
+    audios_res = await db.execute(
+        select(AudioFile).where(
+            AudioFile.project_id == project_id,
+            AudioFile.status.notin_([
+                AudioStatus.TRANSCRIBED,
+                AudioStatus.CORRECTED,
+                AudioStatus.TRANSCRIBING,
+            ])
+        )
+    )
+    untranscribed = audios_res.scalars().all()
+
+    import asyncio as asyncio_module
+    from app.workers.transcription_worker import process_audio
+
+    launched_ids = []
+    for audio in untranscribed:
+        asyncio_module.create_task(process_audio(audio.id))
+        launched_ids.append(str(audio.id))
+
+    return {
+        "message": f"{len(launched_ids)} transcription(s) lancée(s)",
+        "launched_count": len(launched_ids),
+        "audio_ids": launched_ids,
+    }
+
+
+@router.post("/{project_id}/audios/batch-transcribe", status_code=status.HTTP_200_OK)
+@limiter.limit("30/minute")
+async def batch_transcribe_audios(
+    request: Request,
+    project_id: uuid.UUID,
+    data: BatchAudioIdsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Lance la transcription d'une sélection de fichiers (en ignorant ceux déjà transcrits ou en cours)."""
+    if not data.audio_ids:
+        return {"message": "Aucun fichier spécifié", "launched_count": 0, "audio_ids": []}
+
+    result = await db.execute(
+        select(Project).where(
+            Project.id == project_id,
+            Project.owner_id == current_user.id,
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Projet non trouvé")
+
+    audios_res = await db.execute(
+        select(AudioFile).where(
+            AudioFile.project_id == project_id,
+            AudioFile.id.in_(data.audio_ids),
+            AudioFile.status.notin_([
+                AudioStatus.TRANSCRIBED,
+                AudioStatus.CORRECTED,
+                AudioStatus.TRANSCRIBING,
+            ]),
+        )
+    )
+    to_transcribe = audios_res.scalars().all()
+
+    import asyncio as asyncio_module
+    from app.workers.transcription_worker import process_audio
+
+    launched_ids = []
+    for audio in to_transcribe:
+        asyncio_module.create_task(process_audio(audio.id))
+        launched_ids.append(str(audio.id))
+
+    return {
+        "message": f"{len(launched_ids)} transcription(s) lancée(s)",
+        "launched_count": len(launched_ids),
+        "audio_ids": launched_ids,
+    }
 
 @router.get("/{project_id}/audios/{audio_id}/transcript")
 @limiter.limit("300/minute")
@@ -387,6 +569,7 @@ class SaveCorrectedRequest(BaseModel):
 
 
 @router.put("/{project_id}/audios/{audio_id}/transcript/save-raw")
+@router.put("/{project_id}/audios/{audio_id}/transcript/validate")
 @limiter.limit("300/minute")
 async def save_raw_transcript(
     request: Request,
@@ -396,7 +579,7 @@ async def save_raw_transcript(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Sauvegarde manuellement la transcription brute."""
+    """Sauvegarde et valide manuellement la transcription brute."""
     result = await db.execute(
         select(Transcript).where(Transcript.audio_file_id == audio_id)
     )
@@ -405,6 +588,8 @@ async def save_raw_transcript(
         raise HTTPException(status_code=404, detail="Aucune transcription trouvée")
 
     transcript.raw_text = data.raw_text
+    if transcript.status in ("raw", "transcribed", "uploaded"):
+        transcript.status = "validated"
     
     # Versioning
     versions_res = await db.execute(
@@ -417,17 +602,23 @@ async def save_raw_transcript(
         transcript_id=transcript.id,
         version_number=next_ver,
         content=data.raw_text,
-        source="manual_raw",
+        source="validated",
     )
     db.add(new_version)
     await db.commit()
+    await db.refresh(transcript)
 
     return {
-        "message": "Transcription brute sauvegardée avec succès",
+        "id": str(transcript.id),
+        "audio_file_id": str(transcript.audio_file_id),
         "raw_text": transcript.raw_text,
+        "corrected_text": transcript.corrected_text,
+        "status": transcript.status,
+        "segments": transcript.raw_json.get("segments", []) if transcript.raw_json else [],
     }
 
 
+@router.put("/{project_id}/audios/{audio_id}/transcript")
 @router.put("/{project_id}/audios/{audio_id}/transcript/save")
 @limiter.limit("300/minute")
 async def save_corrected_transcript(
@@ -438,7 +629,7 @@ async def save_corrected_transcript(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Sauvegarde manuellement la transcription corrigée."""
+    """Sauvegarde manuellement la transcription modifiée/validée par l'utilisateur."""
     result = await db.execute(
         select(Transcript).where(Transcript.audio_file_id == audio_id)
     )
@@ -449,7 +640,7 @@ async def save_corrected_transcript(
     transcript.corrected_text = data.corrected_text
     transcript.status = "corrected"
 
-    # Versioning
+    # Versioning manuel
     versions_res = await db.execute(
         select(TranscriptVersion).where(TranscriptVersion.transcript_id == transcript.id)
     )
@@ -464,15 +655,20 @@ async def save_corrected_transcript(
     )
     db.add(new_version)
     await db.commit()
+    await db.refresh(transcript)
 
     return {
-        "message": "Transcription corrigée sauvegardée avec succès",
+        "id": str(transcript.id),
+        "audio_file_id": str(transcript.audio_file_id),
+        "raw_text": transcript.raw_text,
         "corrected_text": transcript.corrected_text,
+        "status": transcript.status,
+        "segments": transcript.raw_json.get("segments", []) if transcript.raw_json else [],
     }
 
 
 @router.post("/{project_id}/audios/{audio_id}/correct")
-@limiter.limit("30/minute") # LLM calls should be more strictly limited
+@limiter.limit("30/minute") # LLM calls should be strictly limited
 async def correct_transcription(
     request: Request,
     project_id: uuid.UUID,
@@ -480,7 +676,7 @@ async def correct_transcription(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Corrige automatiquement la transcription avec le LLM."""
+    """Corrige automatiquement la transcription avec le LLM en s'appuyant sur le texte validé et le glossaire métier."""
     result = await db.execute(
         select(Transcript).where(Transcript.audio_file_id == audio_id)
     )
@@ -489,39 +685,55 @@ async def correct_transcription(
     if not transcript:
         raise HTTPException(status_code=404, detail="Aucune transcription trouvée")
     
-    if not transcript.raw_text:
+    # Texte source : priorité au texte validé manuellement, sinon texte brut Whisper
+    source_text = transcript.corrected_text or transcript.raw_text
+    if not source_text or not source_text.strip():
         raise HTTPException(status_code=400, detail="Transcription vide")
 
-    # Correction
+    # Récupération des termes du glossaire du projet
+    glossary_res = await db.execute(
+        select(Glossary).where(Glossary.project_id == project_id)
+    )
+    glossary = glossary_res.scalar_one_or_none()
+    glossary_terms = glossary.terms if glossary and glossary.terms else []
+
+    # Statut en cours
     transcript.status = "correcting"
     await db.commit()
     
-    corrected = await correct_transcript(transcript.raw_text)
-    
-    transcript.corrected_text = corrected
-    transcript.status = "corrected"
+    try:
+        corrected = await correct_transcript(source_text, glossary_terms=glossary_terms)
+        transcript.corrected_text = corrected
+        transcript.status = "corrected"
 
-    # Création d'une nouvelle version LLM
-    versions_res = await db.execute(
-        select(TranscriptVersion).where(TranscriptVersion.transcript_id == transcript.id)
-    )
-    existing_versions = versions_res.scalars().all()
-    next_ver = max([v.version_number for v in existing_versions], default=0) + 1
+        # Création d'une nouvelle version LLM
+        versions_res = await db.execute(
+            select(TranscriptVersion).where(TranscriptVersion.transcript_id == transcript.id)
+        )
+        existing_versions = versions_res.scalars().all()
+        next_ver = max([v.version_number for v in existing_versions], default=0) + 1
 
-    new_version = TranscriptVersion(
-        transcript_id=transcript.id,
-        version_number=next_ver,
-        content=corrected,
-        source="llm",
-    )
-    db.add(new_version)
-    await db.commit()
+        new_version = TranscriptVersion(
+            transcript_id=transcript.id,
+            version_number=next_ver,
+            content=corrected,
+            source="llm",
+        )
+        db.add(new_version)
+        await db.commit()
+        await db.refresh(transcript)
+    except Exception as e:
+        transcript.status = "error"
+        await db.commit()
+        raise HTTPException(status_code=500, detail=f"Erreur lors de la correction LLM: {str(e)}")
     
     return {
         "id": str(transcript.id),
+        "audio_file_id": str(transcript.audio_file_id),
         "raw_text": transcript.raw_text,
         "corrected_text": transcript.corrected_text,
         "status": transcript.status,
+        "segments": transcript.raw_json.get("segments", []) if transcript.raw_json else [],
     }
 
 
@@ -561,17 +773,17 @@ async def list_transcript_versions(
     ]
 
 
-@router.post("/{project_id}/audios/{audio_id}/transcript/restore/{version_id}")
+@router.post("/{project_id}/audios/{audio_id}/transcript/restore/{version_identifier}")
 @limiter.limit("300/minute")
 async def restore_transcript_version(
     request: Request,
     project_id: uuid.UUID,
     audio_id: uuid.UUID,
-    version_id: uuid.UUID,
+    version_identifier: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Restaure une version spécifique dans la transcription corrigée."""
+    """Restaure une version spécifique (par UUID ou par numéro de version) dans la transcription."""
     result = await db.execute(
         select(Transcript).where(Transcript.audio_file_id == audio_id)
     )
@@ -579,13 +791,30 @@ async def restore_transcript_version(
     if not transcript:
         raise HTTPException(status_code=404, detail="Aucune transcription trouvée")
 
-    ver_res = await db.execute(
-        select(TranscriptVersion).where(
-            TranscriptVersion.id == version_id,
-            TranscriptVersion.transcript_id == transcript.id,
+    # Recherche par version_number si numérique, ou par UUID sinon
+    version = None
+    if version_identifier.isdigit():
+        v_num = int(version_identifier)
+        ver_res = await db.execute(
+            select(TranscriptVersion).where(
+                TranscriptVersion.transcript_id == transcript.id,
+                TranscriptVersion.version_number == v_num,
+            )
         )
-    )
-    version = ver_res.scalar_one_or_none()
+        version = ver_res.scalar_one_or_none()
+    else:
+        try:
+            v_uuid = uuid.UUID(version_identifier)
+            ver_res = await db.execute(
+                select(TranscriptVersion).where(
+                    TranscriptVersion.transcript_id == transcript.id,
+                    TranscriptVersion.id == v_uuid,
+                )
+            )
+            version = ver_res.scalar_one_or_none()
+        except ValueError:
+            pass
+
     if not version:
         raise HTTPException(status_code=404, detail="Version non trouvée")
 
@@ -608,10 +837,15 @@ async def restore_transcript_version(
     )
     db.add(restored_version)
     await db.commit()
+    await db.refresh(transcript)
 
     return {
-        "message": f"Version {version.version_number} restaurée avec succès",
+        "id": str(transcript.id),
+        "audio_file_id": str(transcript.audio_file_id),
+        "raw_text": transcript.raw_text,
         "corrected_text": transcript.corrected_text,
+        "status": transcript.status,
+        "segments": transcript.raw_json.get("segments", []) if transcript.raw_json else [],
     }
 
 @router.get("/{project_id}/audios/{audio_id}/stream")

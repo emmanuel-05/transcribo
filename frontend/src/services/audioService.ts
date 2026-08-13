@@ -48,10 +48,58 @@ export const audioService = {
   },
 
   /**
+   * Supprime tous les fichiers audio d'un projet.
+   */
+  async deleteAllAudios(projectId: string): Promise<{ deleted_count: number }> {
+    const response = await api.delete<{ deleted_count: number }>(
+      `/projects/${projectId}/audios/all`
+    );
+    return response.data;
+  },
+
+  /**
+   * Supprime une sélection de fichiers audio.
+   */
+  async deleteMultipleAudios(
+    projectId: string,
+    audioIds: string[]
+  ): Promise<{ deleted_count: number }> {
+    const response = await api.post<{ deleted_count: number }>(
+      `/projects/${projectId}/audios/batch-delete`,
+      { audio_ids: audioIds }
+    );
+    return response.data;
+  },
+
+  /**
    * Lance le processus de transcription automatique pour un fichier audio.
    */
   async transcribeAudio(projectId: string, audioId: string): Promise<void> {
     await api.post(`/projects/${projectId}/audios/${audioId}/transcribe`);
+  },
+
+  /**
+   * Lance la transcription de tous les fichiers non transcrits du projet.
+   */
+  async transcribeAllAudios(projectId: string): Promise<{ launched_count: number }> {
+    const response = await api.post<{ launched_count: number }>(
+      `/projects/${projectId}/audios/transcribe-all`
+    );
+    return response.data;
+  },
+
+  /**
+   * Lance la transcription d'une sélection de fichiers (ignorant ceux déjà transcrits).
+   */
+  async transcribeMultipleAudios(
+    projectId: string,
+    audioIds: string[]
+  ): Promise<{ launched_count: number }> {
+    const response = await api.post<{ launched_count: number }>(
+      `/projects/${projectId}/audios/batch-transcribe`,
+      { audio_ids: audioIds }
+    );
+    return response.data;
   },
 
   /**
