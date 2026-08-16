@@ -7,24 +7,32 @@ on:
 
 jobs:
   check-frontend:
-    name: Lint et vérification du frontend
+    name: link et vérification du frontend
     runs-on: ubuntu-latest
 
     steps:
-      - name: 1. Récupérer le code
+      - name: 1. Récupérer le code du dépôt
         uses: actions/checkout@v4
 
-      - name: 2. Installer Node.js
+      - name: 2. Install node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: 'frontend/package-lock.json'
 
-      - name: 3. Installer les dépendances du frontend
+      - name: 3. Install les dépendances du frontend(Clean Install)
         run: |
           cd frontend
-          npm install
+          npm ci
 
-      - name: 4. Vérifier les erreurs de code (Lint)
+      - name: 4. Vérification ESLint
         run: |
           cd frontend
           npm run lint
+      - name: 5. Véifier la compilation Next.js (Build)
+        run: |
+          cd frontend
+          npm run build
+        
+        
