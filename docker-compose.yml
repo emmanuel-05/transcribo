@@ -1,56 +1,65 @@
-version: '3.9'
+﻿version: '3.9'
+
 services:
-# --- BASE DE DONNÉES (Stockage du texte) ---
+  # --- BASE DE DONNÉES (PostgreSQL) ---
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: transcribo
-      POSTGRES_USER: transcribo
-      POSTGRES_PASSWORD: transcribo123 # à changer en production pour la sécurité !
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
-      - "5433:5432"
+      - "${POSTGRES_PORT}"
     volumes:
-      - pgdata:/var/lib/postgresql/data 
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
+  # --- CACHE & FILE D'ATTENTE (Redis) ---
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT}"
+    restart: unless-stopped
 
-  # --- STOCKAGE DES FICHIERS ---
+  # --- STOCKAGE DES FICHIERS (MinIO S3) ---
   minio:
     image: minio/minio
-    command: server /data --console-address ":9001"
+    command: server /data --console-address ":${MINIO_CONSOLE_PORT}"
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin # à changer en production pour la sécurité !
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
     ports:
-      - "9000:9000" # Port pour l'API
-      - "9001:9001" # Port pour l'interface web
+      - "${MINIO_API_PORT}"
+      - "${MINIO_CONSOLE_PORT}"
     volumes:
       - minio_data:/data
+    restart: unless-stopped
 
+  # --- BACKEND (Python FastAPI) ---
   backend:
     build:
       context: ./backend
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT}"
     env_file:
       - .env.docker
     depends_on:
       - postgres
       - redis
       - minio
+    restart: unless-stopped
 
+  # --- FRONTEND (Next.js) ---
   frontend:
     build:
       context: ./frontend
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT}"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     depends_on:
       - backend
+    restart: unless-stopped
 
 volumes:
   pgdata:

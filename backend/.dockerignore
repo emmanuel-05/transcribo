@@ -1,17 +1,45 @@
+# Python & Backend
 .venv/
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
-.env
+.Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
 .pytest_cache/
 .coverage
 htmlcov/
 tests/
+
+# Node.js & Frontend (Next.js)
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+.pnpm-debug.log*
+
+# Données, Bases de données & Uploads
+pgdata/
+minio_data/
+uploads/
+test_audio/
+*.sqlite3
+*.db
+
+# Environnement & Secrets
+.env
+.env.*
+!.env.example
+
+# Git & Système
 .git/
+.gitignore
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
