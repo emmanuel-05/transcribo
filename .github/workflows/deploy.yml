@@ -33,7 +33,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           source: "."
-          target: ${{ vars.SERVER_PROJECT_PATH }}
+          target: ${{ secrets.SERVER_PROJECT_PATH }}
           strip_components: 1
           rm: true
 
