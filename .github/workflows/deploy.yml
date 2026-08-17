@@ -101,6 +101,10 @@ jobs:
             echo "Redémarrage des containers Docker Compose..."
             docker compose --env-file .env.docker down --remove-orphans
             docker compose --env-file .env.docker up -d --build
+            echo "⏳ Attente de 10 secondes pour l'initialisation de PostgreSQL..."
+            sleep 10
+            echo "🚀 Exécution des migrations de base de données (Alembic)..."
+            docker compose --env-file .env.docker exec -T backend alembic upgrade head
             
             echo "Nettoyage des images Docker inutilisées..."
             docker image prune -f
