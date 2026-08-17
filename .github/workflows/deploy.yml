@@ -20,6 +20,7 @@ jobs:
   deploy:
     name: Déploiement VPS 
     runs-on: ubuntu-latest
+    
     steps:
       - name: Récupération du code source
         uses: actions/checkout@v4
