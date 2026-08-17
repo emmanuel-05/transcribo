@@ -20,10 +20,23 @@ jobs:
   deploy:
     name: Déploiement VPS 
     runs-on: ubuntu-latest
+    environment: ${{ 'development' }}
     
     steps:
       - name: Récupération du code source
         uses: actions/checkout@v4
+
+      - name: Copy project files via SCP
+        uses: appleboy/scp-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: "."
+          target: ${{ vars.SERVER_PROJECT_PATH }}
+          strip_components: 1
+          rm: true
 
       - name: Execution de la mise à jour sur le VPS
         uses: appleboy/ssh-action@v1.0.3
