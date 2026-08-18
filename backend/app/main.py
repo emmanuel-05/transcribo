@@ -1,6 +1,7 @@
 import time
 import logging
 from logging.handlers import TimedRotatingFileHandler
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
