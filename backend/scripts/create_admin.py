@@ -79,7 +79,7 @@ async def create_or_promote_admin(email: str, password: str) -> None:
 
         # 4. Vérification si l'utilisateur existe déjà
         if user:
-            print(f"ℹ️ Utilisateur existant trouvé : '{email}'")
+            print(f" Utilisateur existant trouvé : '{email}'")
             needs_update = False
 
             if not getattr(user, "is_admin", False):
@@ -95,13 +95,13 @@ async def create_or_promote_admin(email: str, password: str) -> None:
                     await session.commit()
                 else:
                     session.commit()
-                print(f"✅ L'utilisateur '{email}' a été mis à jour avec le statut d'administrateur (is_admin=True).")
+                print(f"L'utilisateur '{email}' a été mis à jour avec le statut d'administrateur (is_admin=True).")
             else:
-                print(f"ℹ️ L'utilisateur '{email}' est déjà administrateur (is_admin=True).")
+                print(f"L'utilisateur '{email}' est déjà administrateur (is_admin=True).")
 
         else:
             # Créer un nouvel utilisateur avec is_admin=True et is_active=True
-            print(f"➕ Création d'un nouvel utilisateur administrateur pour '{email}'...")
+            print(f"Création d'un nouvel utilisateur administrateur pour '{email}'...")
             new_user = User(
                 email=email,
                 hashed_password=hashed_pwd,
@@ -116,7 +116,7 @@ async def create_or_promote_admin(email: str, password: str) -> None:
             else:
                 session.commit()
 
-            print(f"🎉 Nouvel administrateur '{email}' créé avec succès (is_admin=True, is_active=True) !")
+            print(f" Nouvel administrateur '{email}' créé avec succès (is_admin=True, is_active=True) !")
 
     except Exception as e:
         # 5. Gérer proprement les erreurs (rollback)
@@ -124,7 +124,7 @@ async def create_or_promote_admin(email: str, password: str) -> None:
             await session.rollback()
         else:
             session.rollback()
-        print(f"❌ Erreur lors du traitement de l'administrateur : {e}", file=sys.stderr)
+        print(f" Erreur lors du traitement de l'administrateur : {e}", file=sys.stderr)
         sys.exit(1)
 
     finally:
