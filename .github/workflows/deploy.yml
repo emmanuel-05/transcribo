@@ -1,4 +1,4 @@
-﻿name: 🚀 Déploiement Continu (CD) - Production
+﻿name: Déploiement Continu (CD) - Production
 
 # ------------------------------------------------------------------------------
 # Déclencheurs du Workflow
@@ -105,7 +105,7 @@ jobs:
             sleep 10
             echo "🚀 Exécution des migrations de base de données (Alembic)..."
             docker compose --env-file .env.docker exec -T backend alembic upgrade head
-            
+
             echo "Nettoyage des images Docker inutilisées..."
             docker image prune -f
             
