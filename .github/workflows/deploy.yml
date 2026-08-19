@@ -31,15 +31,19 @@ jobs:
           port: ${{ secrets.SSH_PORT }}
           script: |
             set -e # Arrête le script dès la moindre erreur
-            echo " Connexion SSH établie sur le serveur distant."
+            echo "🔌 Connexion SSH établie sur le serveur distant."
             
             cd ${{ secrets.SERVER_PROJECT_PATH }}
 
-            echo " Récupération des dernières modifications Git..."
+            # 🔧 CORRECTION : Ajout du répertoire comme safe.directory pour éviter l'erreur "dubious ownership"
+            echo "🔧 Configuration de Git pour éviter l'erreur de propriété..."
+            git config --global --add safe.directory "$(pwd)"
+            
+            echo "📥 Récupération des dernières modifications Git..."
             git fetch origin main
             git reset --hard origin/main
 
-            echo " Génération / Mise à jour du fichier .env.docker..."
+            echo "📝 Génération / Mise à jour du fichier .env.docker..."
             cat << 'EOF' > .env.docker
             # Base de Données PostgreSQL
             POSTGRES_DB=${{ vars.POSTGRES_DB }}
@@ -73,22 +77,22 @@ jobs:
             CONVERTIO_API_KEY=${{ secrets.CONVERTIO_API_KEY }}
             EOF
 
-            echo " Construction et démarrage des conteneurs..."
+            echo "🏗️ Construction et démarrage des conteneurs..."
             docker compose --env-file .env.docker up -d --build --remove-orphans
 
-            echo " Attente que PostgreSQL soit prêt..."
+            echo "⏳ Attente que PostgreSQL soit prêt..."
             until docker compose --env-file .env.docker exec -T db pg_isready -U "${{ vars.POSTGRES_USER }}" -d "${{ vars.POSTGRES_DB }}"; do
-              echo "En attente de la disponibilité de la base de données..."
+              echo "⏳ En attente de la disponibilité de la base de données..."
               sleep 2
             done
 
-            echo " Exécution des migrations Alembic..."
+            echo "🔄 Exécution des migrations Alembic..."
             docker compose --env-file .env.docker exec -T backend alembic upgrade head
 
-            echo " Nettoyage des anciennes images Docker..."
+            echo "🧹 Nettoyage des anciennes images Docker..."
             docker image prune -f
 
-            echo " Déploiement terminé avec succès !"
+            echo "✅ Déploiement terminé avec succès !"
 
   # ============================================================================
   # ÉTAPE 2 : Health Check (Vérification de Disponibilité Réelle)
@@ -100,7 +104,7 @@ jobs:
     steps:
       - name: Vérification de l'état du service
         run: |
-          echo "Attente de 15 secondes avant le test..."
+          echo "⏳ Attente de 15 secondes avant le test..."
           sleep 15
           
           # Test avec retry automatique (3 tentatives)
@@ -110,10 +114,10 @@ jobs:
           
           while [ $COUNT -lt $MAX_RETRIES ]; do
             STATUS_CODE=$(curl -o /dev/null -s -w "%{http_code}" --connect-timeout 10 http://${{ secrets.SSH_HOST }}:3000/ || echo "000")
-            echo "Tentative $((COUNT+1)): Statut HTTP reçu = $STATUS_CODE"
+            echo "📊 Tentative $((COUNT+1)): Statut HTTP reçu = $STATUS_CODE"
             
             if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
-              echo " Application en ligne et fonctionnelle !"
+              echo "✅ Application en ligne et fonctionnelle !"
               SUCCESS=1
               break
             fi
