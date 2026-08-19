@@ -35,13 +35,11 @@ jobs:
             
             cd ${{ secrets.SERVER_PROJECT_PATH }}
 
-            # 🔧 Configuration Git du dossier
-            echo "🔧 Configuration de Git..."
+            # 🔧 CORRECTION : Ajout du répertoire comme safe.directory pour éviter l'erreur "dubious ownership"
+            echo "🔧 Configuration de Git pour éviter l'erreur de propriété..."
             git config --global --add safe.directory "$(pwd)"
             
-            # 📥 Récupération via SSH (Deploy Key configurée sur le VPS)
-            echo "📥 Récupération des dernières modifications via SSH..."
-            git remote set-url origin git@github.com:emmanuel-05/transcribo.git
+            echo "📥 Récupération des dernières modifications Git..."
             git fetch origin main
             git reset --hard origin/main
 
