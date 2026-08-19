@@ -40,6 +40,7 @@ jobs:
             git config --global --add safe.directory "$(pwd)"
             
             echo "📥 Récupération des dernières modifications Git..."
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/emmanuel-05/transcribo.git
             git fetch origin main
             git reset --hard origin/main
 
