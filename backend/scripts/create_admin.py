@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Script Python complet pour créer un utilisateur administrateur ou promouvoir
-un utilisateur existant dans une application FastAPI avec SQLAlchemy.
+Script Python complet pour créer un utilisateur administrateur ou mettre à jour
+le mot de passe et statut d'un utilisateur existant dans FastAPI avec SQLAlchemy.
 
 Usage:
     python scripts/create_admin.py --email admin@example.com --password mon_mot_de_passe_securise
@@ -38,32 +38,22 @@ try:
 except ImportError:
     from app.core.database import AsyncSessionLocal as SessionLocal
 
+from app.core.security import hash_password
 from app.infrastructure.db.models.user import User, UserRole
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-# 2. Utiliser passlib avec bcrypt pour hasher le mot de passe de manière sécurisée
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-def hash_password(password: str) -> str:
-    """Hache un mot de passe en texte brut avec passlib et bcrypt."""
-    return pwd_context.hash(password)
 
 
 async def create_or_promote_admin(email: str, password: str) -> None:
     """
     1. Se connecte à la base de données via SQLAlchemy (SessionLocal).
     2. Vérifie si l'utilisateur existe déjà :
-       - S'il existe, le bascule en admin (is_admin=True) s'il ne l'est pas déjà.
+       - S'il existe, met à jour son mot de passe et active is_admin=True et is_active=True.
        - Sinon, crée un nouvel utilisateur avec is_admin=True et is_active=True.
     3. Gère proprement les erreurs et ferme la session de base de données.
     """
     hashed_pwd = hash_password(password)
 
-    # 1. Connexion via SessionLocal
     session = SessionLocal()
     is_async = isinstance(session, AsyncSession) or inspect.iscoroutinefunction(getattr(session, "execute", None))
 
@@ -77,30 +67,20 @@ async def create_or_promote_admin(email: str, password: str) -> None:
 
         user = result.scalar_one_or_none()
 
-        # 4. Vérification si l'utilisateur existe déjà
         if user:
-            print(f" Utilisateur existant trouvé : '{email}'")
-            needs_update = False
+            print(f"ℹ️ Utilisateur existant trouvé : '{email}'")
+            user.hashed_password = hashed_pwd
+            user.is_admin = True
+            user.is_active = True
+            if hasattr(user, "role"):
+                user.role = UserRole.ADMIN if hasattr(UserRole, "ADMIN") else "admin"
 
-            if not getattr(user, "is_admin", False):
-                user.is_admin = True
-                needs_update = True
-
-            if hasattr(user, "role") and user.role != UserRole.ADMIN:
-                user.role = UserRole.ADMIN
-                needs_update = True
-
-            if needs_update:
-                if is_async:
-                    await session.commit()
-                else:
-                    session.commit()
-                print(f"L'utilisateur '{email}' a été mis à jour avec le statut d'administrateur (is_admin=True).")
+            if is_async:
+                await session.commit()
             else:
-                print(f"L'utilisateur '{email}' est déjà administrateur (is_admin=True).")
-
+                session.commit()
+            print(f"✅ L'administrateur '{email}' a été mis à jour avec le nouveau mot de passe (is_admin=True, is_active=True) !")
         else:
-            # Créer un nouvel utilisateur avec is_admin=True et is_active=True
             print(f"Création d'un nouvel utilisateur administrateur pour '{email}'...")
             new_user = User(
                 email=email,
@@ -116,19 +96,17 @@ async def create_or_promote_admin(email: str, password: str) -> None:
             else:
                 session.commit()
 
-            print(f" Nouvel administrateur '{email}' créé avec succès (is_admin=True, is_active=True) !")
+            print(f"🎉 Nouvel administrateur '{email}' créé avec succès (is_admin=True, is_active=True) !")
 
     except Exception as e:
-        # 5. Gérer proprement les erreurs (rollback)
         if is_async:
             await session.rollback()
         else:
             session.rollback()
-        print(f" Erreur lors du traitement de l'administrateur : {e}", file=sys.stderr)
+        print(f"❌ Erreur lors du traitement de l'administrateur : {e}", file=sys.stderr)
         sys.exit(1)
 
     finally:
-        # 5. Fermer la session de base de données
         if is_async:
             await session.close()
         else:
@@ -136,9 +114,8 @@ async def create_or_promote_admin(email: str, password: str) -> None:
 
 
 def main() -> None:
-    # 3. Utiliser argparse pour accepter deux arguments obligatoires : --email et --password
     parser = argparse.ArgumentParser(
-        description="Script Python pour créer un administrateur ou promouvoir un utilisateur existant en admin (FastAPI / SQLAlchemy)."
+        description="Script Python pour créer ou mettre à jour un administrateur."
     )
     parser.add_argument(
         "--email",
@@ -154,7 +131,6 @@ def main() -> None:
     )
 
     args = parser.parse_args()
-
     asyncio.run(create_or_promote_admin(email=args.email, password=args.password))
 
 

@@ -53,7 +53,7 @@ function LoginForm() {
       await login(email, password);
       router.push(ROUTES.DASHBOARD);
     } catch (err: any) {
-      setError(err.response?.data?.detail || "Erreur de connexion");
+      setError(err.response?.data?.detail || err.message || "Erreur de connexion au serveur");
     } finally {
       setIsSubmitting(false);
     }

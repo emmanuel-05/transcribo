@@ -68,6 +68,7 @@ app.add_middleware(
 app.add_middleware(
     TrustedHostMiddleware,
     allowed_hosts=[
+        "backend",
         "faslab.online",
         "*.faslab.online",
         "169.58.171.214",

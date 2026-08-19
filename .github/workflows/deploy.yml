@@ -6,8 +6,8 @@
 on:
   push:
     branches:
-      - main       # Déclenchement sur chaque push sur main
-  workflow_dispatch: # Déclenchement manuel via GitHub Actions UI
+      - main
+  workflow_dispatch:
 
 concurrency:
   group: production_environment
@@ -15,29 +15,14 @@ concurrency:
 
 jobs:
   # ============================================================================
-  # ÉTAPE 2 : Déploiement sur le Serveur VPS via SSH & Docker Compose
+  # ÉTAPE 1 : Déploiement sur le Serveur VPS via SSH & Docker Compose
   # ============================================================================
   deploy:
-    name: Déploiement VPS 
+    name: Déploiement VPS
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Récupération du code source
-        uses: actions/checkout@v4
-
-      - name: Copy project files via SCP
-        uses: appleboy/scp-action@v1.0.0
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          source: "."
-          target: ${{ secrets.SERVER_PROJECT_PATH }}
-          strip_components: 1
-          rm: true
-
-      - name: Execution de la mise à jour sur le VPS
+      - name: Mise à jour et déploiement sur le VPS
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -45,33 +30,29 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
           script: |
-            echo "Connexion SSH établie sur le serveur distant."
-            cd ${{ secrets.SERVER_PROJECT_PATH }}
+            set -e # Arrête le script dès la moindre erreur
+            echo " Connexion SSH établie sur le serveur distant."
             
-            echo "Récupération des dernières modifications Git..."
+            cd ${{ secrets.SERVER_PROJECT_PATH }}
+
+            echo " Récupération des dernières modifications Git..."
             git fetch origin main
             git reset --hard origin/main
-            
-            echo "Vérification de la présence du fichier .env.docker..."
-            if [ ! -f .env.docker ]; then
-              echo "Le fichier .env.docker n'existe pas. Création automatique avec les variables GitHub..."
-              cat << EOF > .env.docker
-            # ==============================================================================
-            # CONFIGURATION DOCKER & SERVICES (Production / Staging)
-            # ==============================================================================
-            
-            # --- Base de Données PostgreSQL ---
+
+            echo " Génération / Mise à jour du fichier .env.docker..."
+            cat << 'EOF' > .env.docker
+            # Base de Données PostgreSQL
             POSTGRES_DB=${{ vars.POSTGRES_DB }}
             POSTGRES_USER=${{ vars.POSTGRES_USER }}
             POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
             POSTGRES_PORT=${{ vars.POSTGRES_PORT }}
             DATABASE_URL=${{ vars.DATABASE_URL }}
-            
-            # --- Redis ---
+
+            # Redis
             REDIS_PORT=${{ vars.REDIS_PORT }}
             REDIS_URL=${{ vars.REDIS_URL }}
-            
-            # --- MinIO (Stockage S3) ---
+
+            # MinIO (Stockage S3)
             MINIO_ROOT_USER=${{ vars.MINIO_ROOT_USER }}
             MINIO_ROOT_PASSWORD=${{ vars.MINIO_ROOT_PASSWORD }}
             MINIO_API_PORT=${{ vars.MINIO_API_PORT }}
@@ -79,54 +60,69 @@ jobs:
             S3_ENDPOINT=${{ vars.S3_ENDPOINT }}
             S3_ACCESS_KEY=${{ vars.S3_ACCESS_KEY }}
             S3_SECRET_KEY=${{ vars.S3_SECRET_KEY }}
-            
-            # --- Ports & URLs des Applications ---
+
+            # Ports & URLs
             BACKEND_PORT=${{ vars.BACKEND_PORT }}
             FRONTEND_PORT=${{ vars.FRONTEND_PORT }}
             NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL }}
-            
-            # --- Sécurité ---
+
+            # Sécurité & APIs Externes
             SECRET_KEY=${{ secrets.SECRET_KEY }}
-            
-            # --- Clés d'API Externes ---
             DEEPGRAM_API_KEY=${{ secrets.DEEPGRAM_API_KEY }}
             GROQ_API_KEY=${{ secrets.GROQ_API_KEY }}
             CONVERTIO_API_KEY=${{ secrets.CONVERTIO_API_KEY }}
             EOF
-              echo "Fichier .env.docker généré avec succès depuis les variables GitHub !"
-            else
-              echo " Le fichier .env.docker existe déjà. Conservation de vos secrets actuels."
-            fi
-            
-            echo "Redémarrage des containers Docker Compose..."
-            docker compose --env-file .env.docker down --remove-orphans
-            docker compose --env-file .env.docker up -d --build
-            echo "⏳ Attente de 10 secondes pour l'initialisation de PostgreSQL..."
-            sleep 10
-            echo "🚀 Exécution des migrations de base de données (Alembic)..."
+
+            echo " Construction et démarrage des conteneurs..."
+            docker compose --env-file .env.docker up -d --build --remove-orphans
+
+            echo " Attente que PostgreSQL soit prêt..."
+            until docker compose --env-file .env.docker exec -T db pg_isready -U "${{ vars.POSTGRES_USER }}" -d "${{ vars.POSTGRES_DB }}"; do
+              echo "En attente de la disponibilité de la base de données..."
+              sleep 2
+            done
+
+            echo " Exécution des migrations Alembic..."
             docker compose --env-file .env.docker exec -T backend alembic upgrade head
 
-            echo "Nettoyage des images Docker inutilisées..."
+            echo " Nettoyage des anciennes images Docker..."
             docker image prune -f
-            
-            echo "Déploiement terminé avec succès !"
+
+            echo " Déploiement terminé avec succès !"
 
   # ============================================================================
-  # ÉTAPE 3 : Health Check (Vérification de Disponibilité)
+  # ÉTAPE 2 : Health Check (Vérification de Disponibilité Réelle)
   # ============================================================================
   health-check:
     name: Health Check (Statut Service)
     needs: deploy
     runs-on: ubuntu-latest
     steps:
-      - name: Test de l'application
+      - name: Vérification de l'état du service
         run: |
-          echo "Attente de 15 secondes..."
+          echo "Attente de 15 secondes avant le test..."
           sleep 15
-          STATUS_CODE=$(curl -o /dev/null -s -w "%{http_code}" http://${{ secrets.SSH_HOST }}:3000/ || echo "000")
-          echo "Code réponse HTTP: $STATUS_CODE"
-          if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
-            echo " Application en ligne !"
-          else
-            echo "Statut reçu: $STATUS_CODE"
+          
+          # Test avec retry automatique (3 tentatives)
+          MAX_RETRIES=3
+          COUNT=0
+          SUCCESS=0
+          
+          while [ $COUNT -lt $MAX_RETRIES ]; do
+            STATUS_CODE=$(curl -o /dev/null -s -w "%{http_code}" --connect-timeout 10 http://${{ secrets.SSH_HOST }}:3000/ || echo "000")
+            echo "Tentative $((COUNT+1)): Statut HTTP reçu = $STATUS_CODE"
+            
+            if [ "$STATUS_CODE" -ge 200 ] && [ "$STATUS_CODE" -lt 400 ]; then
+              echo " Application en ligne et fonctionnelle !"
+              SUCCESS=1
+              break
+            fi
+            
+            COUNT=$((COUNT+1))
+            sleep 5
+          done
+          
+          if [ $SUCCESS -ne 1 ]; then
+            echo "❌ Échec du Health Check : le service ne répond pas correctement (Code: $STATUS_CODE)."
+            exit 1
           fi
