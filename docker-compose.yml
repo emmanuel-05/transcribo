@@ -53,6 +53,8 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     ports:
       - "${FRONTEND_PORT}:3000"
     environment:

@@ -91,7 +91,7 @@ export default function ProjectDetailView({ projectId: propId }: ProjectDetailVi
 
   const apiHost =
     typeof window !== "undefined"
-      ? `http://${window.location.hostname}:8000/api/v1`
+      ? `${window.location.protocol}//${window.location.hostname}:8000/api/v1`
       : "http://localhost:8000/api/v1";
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || apiHost;
 

@@ -3,6 +3,10 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Argument et variable d'environnement au build Next.js
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+
 # Copier et installer les dépendances
 COPY package*.json ./
 RUN npm ci --legacy-peer-deps
