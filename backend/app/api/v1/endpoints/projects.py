@@ -24,20 +24,19 @@ router = APIRouter(prefix="/projects", tags=["Projects"])
 
 # ─── LISTER MES PROJETS ────────────────────────
 
-@router.get("/", response_model=ProjectListResponse)
+@router.get("", response_model=ProjectListResponse)
+@router.get("/", response_model=ProjectListResponse, include_in_schema=False)
 @limiter.limit("300/minute")
 async def list_my_projects(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    #Retourne tous les projets de l'utilisateur connecté.
-    
     # Requête : compter le total
     count_result = await db.execute(
         select(func.count()).where(Project.owner_id == current_user.id)
     )
-    total = count_result.scalar()
+    total = count_result.scalar() or 0
 
     # Requête : récupérer les projets
     result = await db.execute(
@@ -60,9 +59,6 @@ async def get_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Retourne les détails d'un projet spécifique.
-    """
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -82,7 +78,8 @@ async def get_project(
 
 # ─── CRÉER UN PROJET ───────────────────────────
 
-@router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED, include_in_schema=False)
 @limiter.limit("300/minute")
 async def create_project(
     request: Request,
@@ -90,12 +87,9 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Crée un nouveau projet pour l'utilisateur connecté.
-    """
     project = Project(
-        name=project_data.name,
-        description=project_data.description,
+        name=project_data.name.strip(),
+        description=project_data.description.strip() if project_data.description else None,
         owner_id=current_user.id,
     )
     db.add(project)
@@ -108,6 +102,7 @@ async def create_project(
 # ─── MODIFIER UN PROJET ────────────────────────
 
 @router.patch("/{project_id}", response_model=ProjectResponse)
+@router.put("/{project_id}", response_model=ProjectResponse, include_in_schema=False)
 @limiter.limit("300/minute")
 async def update_project(
     request: Request,
@@ -116,9 +111,6 @@ async def update_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Modifie un projet existant (propriétaire uniquement).
-    """
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -130,11 +122,10 @@ async def update_project(
     if not project:
         raise HTTPException(status_code=404, detail="Projet non trouvé")
 
-    # Met à jour seulement les champs fournis
     if project_data.name is not None:
-        project.name = project_data.name
+        project.name = project_data.name.strip()
     if project_data.description is not None:
-        project.description = project_data.description
+        project.description = project_data.description.strip() or None
 
     await db.flush()
     await db.refresh(project)
@@ -152,9 +143,6 @@ async def delete_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Supprime un projet et tout ce qu'il contient (audio, transcriptions).
-    """
     result = await db.execute(
         select(Project).where(
             Project.id == project_id,
@@ -167,8 +155,8 @@ async def delete_project(
         raise HTTPException(status_code=404, detail="Projet non trouvé")
 
     await db.delete(project)
-    # Pas besoin de flush — get_db() fera le commit
     return None  # 204 No Content
+
 
 # ─── GLOSSAIRE D'UN PROJET ─────────────────────
 class GlossaryUpdate(BaseModel):

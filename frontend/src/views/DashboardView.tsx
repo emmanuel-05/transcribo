@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { useProjects } from "@/hooks/useProjects";
@@ -17,9 +17,21 @@ import { ROUTES } from "@/constants/routes";
 
 export default function DashboardView() {
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, logout, isAuthenticated, isLoading: authLoading, fetchMe } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showBatchDeleteModal, setShowBatchDeleteModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    fetchMe();
+  }, [fetchMe]);
+
+  useEffect(() => {
+    if (mounted && !authLoading && !isAuthenticated) {
+      router.replace(ROUTES.LOGIN);
+    }
+  }, [mounted, authLoading, isAuthenticated, router]);
 
   const {
     projects,
@@ -51,8 +63,16 @@ export default function DashboardView() {
     setShowBatchDeleteModal(false);
   };
 
+  if (!mounted || authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <p className="text-gray-500 text-sm">Chargement...</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-gray-50 flex flex-col" suppressHydrationWarning>
       {/* Navbar supérieure */}
       <Navbar user={user} onLogout={() => logout()} />
 

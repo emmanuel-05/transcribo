@@ -14,7 +14,7 @@ export const projectService = {
    * Récupère tous les projets appartenant à l'utilisateur connecté.
    */
   async getProjects(): Promise<ProjectListResponse> {
-    const response = await api.get<ProjectListResponse>("/projects/");
+    const response = await api.get<ProjectListResponse>("/projects");
     return response.data;
   },
 
@@ -30,7 +30,7 @@ export const projectService = {
    * Crée un nouveau projet.
    */
   async createProject(input: ProjectCreateInput): Promise<Project> {
-    const response = await api.post<Project>("/projects/", input);
+    const response = await api.post<Project>("/projects", input);
     return response.data;
   },
 
@@ -38,7 +38,7 @@ export const projectService = {
    * Met à jour les informations d'un projet.
    */
   async updateProject(projectId: string, input: ProjectUpdateInput): Promise<Project> {
-    const response = await api.put<Project>(`/projects/${projectId}`, input);
+    const response = await api.patch<Project>(`/projects/${projectId}`, input);
     return response.data;
   },
 
